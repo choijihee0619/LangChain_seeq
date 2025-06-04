@@ -17,6 +17,10 @@ class Settings(BaseSettings):
     MONGODB_URI: str
     MONGODB_DB_NAME: str = "rag_database"
     
+    # OCR 데이터베이스 설정
+    OCR_MONGODB_URI: Optional[str] = None
+    OCR_DB_NAME: str = "ocr_db"
+    
     # YouTube API 설정
     YOUTUBE_API_KEY: Optional[str] = None
     

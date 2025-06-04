@@ -3,6 +3,14 @@ RAG 백엔드 메인 애플리케이션
 FastAPI 서버 초기화 및 라우터 설정
 """
 import os
+import sys
+from pathlib import Path
+
+# 현재 파일의 부모 디렉토리를 Python 경로에 추가
+current_dir = Path(__file__).parent
+project_root = current_dir.parent
+sys.path.insert(0, str(project_root))
+
 from dotenv import load_dotenv
 
 # 환경변수 로드 (최우선)
@@ -13,10 +21,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import uvicorn
 
-from config.settings import settings
-from database.connection import init_db, close_db
-from api.routers import query, summary, quiz, keywords, mindmap, recommend, upload, folders
-from utils.logger import setup_logger
+from langgraph_llm.config.settings import settings
+from langgraph_llm.database.connection import init_db, close_db
+from langgraph_llm.api.routers import query, summary, quiz, keywords, mindmap, recommend, upload, folders
+from langgraph_llm.api.routers import ocr_bridge
+from langgraph_llm.utils.logger import setup_logger
 
 # 로거 설정
 logger = setup_logger()
@@ -27,6 +36,7 @@ async def lifespan(app: FastAPI):
     # 시작 시
     logger.info("RAG 백엔드 서버 시작...")
     logger.info(f"YouTube API 키 설정 상태: {'설정됨' if os.getenv('YOUTUBE_API_KEY') else '설정 안됨'}")
+    logger.info(f"OCR DB 연결 설정 상태: {'설정됨' if settings.OCR_MONGODB_URI else '기본값 사용'}")
     await init_db()
     yield
     # 종료 시
@@ -59,6 +69,7 @@ app.include_router(quiz.router, prefix="/quiz", tags=["Quiz"])
 app.include_router(keywords.router, prefix="/keywords", tags=["Keywords"])
 app.include_router(mindmap.router, prefix="/mindmap", tags=["Mindmap"])
 app.include_router(recommend.router, prefix="/recommend", tags=["Recommend"])
+app.include_router(ocr_bridge.router, prefix="/ocr-bridge", tags=["OCR Bridge"])
 
 @app.get("/")
 async def root():
@@ -66,7 +77,8 @@ async def root():
     return {
         "message": "RAG 백엔드 API",
         "version": "1.0.0",
-        "docs": "/docs"
+        "docs": "/docs",
+        "ocr_integration": "OCR Bridge 사용 (기존 데이터 안전 보존)"
     }
 
 if __name__ == "__main__":
