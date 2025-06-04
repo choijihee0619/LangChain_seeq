@@ -29,6 +29,7 @@ SEEQ RAG는 다양한 문서 포맷을 자동 처리하여 AI 기반 질의응�
 - **📊 자동 콘텐츠 생성**: 키워드, 요약, 퀴즈, 마인드맵 자동 생성
 - **🎨 멀티소스 추천**: 웹 검색 + YouTube + DB 통합 실시간 추천
 - **⚡ 최적화된 성능**: 코드 정리 및 최적화로 깔끔한 프로덕션 환경
+- **🔗 OCR 브릿지 통합**: 기존 OCR 데이터베이스와 안전한 브릿지 연결
 
 ## 🆕 최신 업데이트 (2025-01-20)
 
@@ -125,6 +126,7 @@ SEEQ RAG는 다양한 문서 포맷을 자동 처리하여 AI 기반 질의응�
 | **LLM** | GPT-4o-mini | 질의응답, 요약, 키워드 추출 |
 | **임베딩** | text-embedding-3-large | 1536차원 벡터 생성 |
 | **데이터베이스** | MongoDB | 문서/벡터 통합 저장 |
+| **외부 DB 연동** | OCR Bridge | 기존 OCR 데이터베이스 안전 연결 |
 | **웹 프레임워크** | FastAPI | REST API 서버 |
 | **AI 프레임워크** | LangChain | LLM 체인 관리 |
 | **비동기 처리** | motor | MongoDB 비동기 드라이버 |
@@ -154,11 +156,22 @@ SEEQ RAG는 다양한 문서 포맷을 자동 처리하여 AI 기반 질의응�
 ✅ 처리 완료
 ```
 
-**🛡️ AI 라벨링 환각 방지 시스템:**
-- **Temperature 0.1**: LLM 창의성 최소화로 환각 위험 감소
-- **텍스트 기반 분석**: 제공된 문서 내용에만 기반한 키워드 추출
-- **일반어 필터링**: "있다", "하다" 등 의미 없는 키워드 자동 제거
-- **신뢰도 조정**: 환각 방지로 인한 보수적 신뢰도 점수 적용 (0.8 → 0.3)
+### OCR 데이터베이스 브릿지 아키텍처
+```
+🗂️ 기존 OCR Database (ocr_db.texts)
+    ↓ (안전한 브릿지 연결)
+🌉 OCR Bridge System
+    ↓ (메타데이터 동기화)
+📁 RAG Database (seeq_rag)
+    ↓ (통합 검색)
+🔍 통합 검색 및 AI 분석
+```
+
+**🔗 OCR 브릿지 특징:**
+- **안전한 데이터 보존**: 기존 OCR 데이터를 건드리지 않고 참조만 수행
+- **자동 동기화**: 새로운 OCR 데이터 자동 감지 및 동기화
+- **통합 검색**: RAG 시스템에서 업로드 문서와 OCR 데이터 통합 검색
+- **폴더 분리**: "OCR 텍스트" 전용 폴더로 데이터 분류 관리
 
 ### 질의응답 흐름
 ```
@@ -269,7 +282,7 @@ rag-backend/                                   # 📁 총 ~750KB (정리 후)
 
 ### 정규화된 폴더 시스템 (ObjectId 기반)
 
-### 🏗️ 데이터베이스 구조도 (folders 중심 아키텍처)
+### 🏗️ 데이터베이스 구조도 (folders 중심 + OCR 브릿지 아키텍처)
 
 ```
                               📁 folders (중앙 메타데이터 관리)
@@ -278,7 +291,7 @@ rag-backend/                                   # 📁 총 ~750KB (정리 후)
                           │         │         │
                        _id      title    folder_type
                           │         │         │
-                          │    "사용자 입력"  "general"
+                          │    "사용자 입력"  "general"/"ocr"
                           │       폴더명
                           │
                           │ (ObjectId 참조)
@@ -296,7 +309,8 @@ rag-backend/                                   # 📁 총 ~750KB (정리 후)
       │ file_metadata               │              │             │
       │   ├─ file_id               │              │             │
       │   ├─ filename              │              │             │
-      │   └─ file_type             │              │             │
+      │   ├─ file_type             │              │             │
+      │   └─ data_source           │              │             │
       │                            │              │             │
       └─── file_id ────────────────┼──────────────┼─────────────┼─────────────┐
                                    │              │             │             │
@@ -310,13 +324,25 @@ rag-backend/                                   # 📁 총 ~750KB (정리 후)
                                                                            │ category
                                                                            │ confidence
 
-═══════════════════════════════════════════════════════════════════════════════════════════
+══════════════════════════════════════════════════════════════════════════════════════════════════
+
+🌉 OCR 브릿지 시스템 (외부 데이터베이스 연동)
+
+🗂️ OCR Database (ocr_db.texts)          🌉 OCR Bridge             📁 RAG Database  
+├─ text: "OCR 추출 텍스트"              ├─ 연결 관리               ├─ "OCR 텍스트" 폴더
+├─ image_path: "원본 이미지"            ├─ 데이터 변환             │  ├─ data_source: "ocr_bridge"
+└─ _id: ObjectId                       └─ 메타데이터 복사          │  ├─ original_db: "ocr_db.texts"
+                                                                  │  └─ file_type: "ocr"
+                                                                  └─ 통합 검색 지원
+
+══════════════════════════════════════════════════════════════════════════════════════════════════
 
 📊 관계 요약:
 ┌─────────────────┬─────────────────┬─────────────────────────────────────────────────────┐
 │ 컬렉션          │ 참조 필드       │ 관계 설명                                           │
 ├─────────────────┼─────────────────┼─────────────────────────────────────────────────────┤
 │ documents       │ folder_id       │ 1:N - 하나의 폴더에 여러 문서 청크               │
+│ documents       │ data_source     │ "upload" / "ocr_bridge" - 데이터 출처 구분      │
 │ chunks          │ folder_id       │ 1:N - 하나의 폴더에 여러 레거시 청크             │  
 │ summaries       │ folder_id       │ 1:N - 하나의 폴더에 여러 요약 (타입별)           │
 │ qapairs         │ folder_id       │ 1:N - 하나의 폴더에 여러 퀴즈/Q&A               │
@@ -324,17 +350,20 @@ rag-backend/                                   # 📁 총 ~750KB (정리 후)
 │ labels          │ folder_id       │ 1:N - 하나의 폴더에 여러 AI 라벨                │
 │ labels          │ document_id     │ 1:1 - 하나의 문서에 하나의 라벨 (고유)           │
 │ file_info       │ folder_id       │ 1:N - 하나의 폴더에 여러 파일 처리 기록          │
+│ OCR Bridge      │ ocr_db.texts    │ 참조 - 원본 OCR 데이터 안전 참조               │
 └─────────────────┴─────────────────┴─────────────────────────────────────────────────────┘
 
 🔗 CASCADE 삭제 정책:
    folders 삭제 → 관련된 모든 컬렉션 데이터 자동 삭제
-   ├─ documents (folder_id 기준)
+   ├─ documents (folder_id 기준) - OCR 브릿지 데이터 포함
    ├─ chunks (folder_id 기준)  
    ├─ summaries (folder_id 기준)
    ├─ qapairs (folder_id 기준)
    ├─ recommendations (folder_id 기준)
    ├─ labels (folder_id 기준)
    └─ file_info (folder_id 기준)
+   
+   주의: 원본 OCR 데이터(ocr_db.texts)는 안전하게 보존됨
 ```
 
 ### 1. `folders` 컬렉션 (폴더 메타데이터 중앙 관리)
@@ -462,7 +491,7 @@ rag-backend/                                   # 📁 총 ~750KB (정리 후)
   "_id": ObjectId("..."),
   "file_id": "uuid-generated-string",           // 파일 고유 식별자
   "original_filename": "마케팅관리 중간고사 정리.docx",
-  "file_type": "docx",                          // pdf, docx, txt, doc, md
+  "file_type": "docx",                          // pdf, docx, txt, doc, md, ocr
   "file_size": 2961372,                         // 바이트 단위
   "upload_time": ISODate("2024-06-03T06:13:44Z"),
   "folder_id": "683e8fd3a7d860028b795845",      // ObjectId 문자열 참조
@@ -470,21 +499,40 @@ rag-backend/                                   # 📁 총 ~750KB (정리 후)
   "processing_status": "failed",                // "processing", "completed", "failed"
   "error_message": "'chunk_size'",              // 실패 시 에러 메시지
   "failed_at": ISODate("2024-06-03T06:13:57Z"),
-  "created_at": ISODate("2024-06-03T06:13:57Z")
+  "created_at": ISODate("2024-06-03T06:13:57Z"),
+  "data_source": "upload"                       // "upload" / "ocr_bridge" 데이터 출처
 }
 ```
 
-**📋 file_info 컬렉션의 역할:**
-- **🔍 파일 처리 추적**: 업로드된 파일의 처리 상태 실시간 모니터링
-- **❌ 에러 로깅**: 처리 실패 시 상세한 오류 정보 기록
-- **🔄 재처리 관리**: 실패한 파일들의 재처리 우선순위 관리
-- **📊 시스템 안정성**: 파일 처리 성공률 및 실패 패턴 분석
-- **🛠️ 디버깅 지원**: 개발자를 위한 상세한 처리 로그 제공
+### 9. OCR 브릿지 연동 데이터 구조
+```javascript
+// documents 컬렉션에 저장되는 OCR 데이터 (브릿지 형태)
+{
+  "_id": "ocr_674a1b2c3d4e5f6789abcdef",        // OCR 원본 ObjectId 기반
+  "folder_id": "674a1b2c3d4e5f6789abcdef",      // "OCR 텍스트" 폴더 ID
+  "raw_text": "OCR로 추출된 텍스트 내용...",
+  "created_at": ISODate("2024-12-20T10:00:00Z"),
+  "file_metadata": {
+    "file_id": "ocr_674a1b2c3d4e5f6789abcdef",
+    "original_filename": "/path/to/image.jpg",   // 원본 이미지 경로
+    "file_type": "ocr",                          // OCR 데이터 표시
+    "file_size": null,
+    "description": "OCR로 추출된 텍스트"
+  },
+  "data_source": "ocr_bridge",                   // 브릿지를 통한 데이터임을 표시
+  "original_db": "ocr_db.texts",                 // 원본 데이터베이스 정보
+  "text_length": 1250,                           // 텍스트 길이
+  "chunks_count": 0                              // 청킹 하지 않음 (원본 유지)
+}
+```
 
-**처리 상태값:**
-- `"processing"`: 파일이 현재 처리 중인 상태
-- `"completed"`: 파일 처리가 성공적으로 완료된 상태  
-- `"failed"`: 파일 처리가 실패한 상태 (error_message 포함)
+**📋 OCR 브릿지의 역할:**
+- **🔗 안전한 연동**: 기존 OCR 데이터베이스를 건드리지 않고 참조만 수행
+- **🔄 자동 동기화**: 새로운 OCR 데이터 자동 감지 및 RAG 시스템 동기화
+- **🔍 통합 검색**: 업로드 문서와 OCR 데이터를 하나의 시스템에서 검색
+- **📁 폴더 분리**: "OCR 텍스트" 전용 폴더로 데이터 출처 명확히 구분
+- **⚡ 성능 최적화**: 메타데이터만 복사하여 빠른 검색 및 처리
+- **🛡️ 데이터 안전성**: 원본 OCR 데이터는 절대 수정하지 않음
 
 ### 📊 최적화된 인덱스 (총 42개)
 
