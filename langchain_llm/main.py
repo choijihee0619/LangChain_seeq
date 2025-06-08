@@ -21,11 +21,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import uvicorn
 
-from langgraph_llm.config.settings import settings
-from langgraph_llm.database.connection import init_db, close_db
-from langgraph_llm.api.routers import query, summary, quiz, keywords, mindmap, recommend, upload, folders
-from langgraph_llm.api.routers import ocr_bridge
-from langgraph_llm.utils.logger import setup_logger
+from langchain_llm.config.settings import settings
+from langchain_llm.database.connection import init_db, close_db
+from langchain_llm.api.routers import query, summary, quiz, keywords, mindmap, recommend, upload, folders
+from langchain_llm.api.routers import ocr_bridge
+from langchain_llm.utils.logger import setup_logger
 
 # 로거 설정
 logger = setup_logger()
