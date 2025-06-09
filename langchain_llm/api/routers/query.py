@@ -1,11 +1,12 @@
 """
-질의응답 API 라우터 (AgentHub 통합 - 대화형 메모리 지원)
+질의응답 API 라우터 (AgentHub 통합 - 대화형 메모리 지원, 자동 세션 생성)
 """
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import Optional, List
 from database.connection import get_database
 from utils.logger import get_logger
+from utils.session import ensure_valid_session_id, generate_query_session_id
 
 logger = get_logger(__name__)
 router = APIRouter()
@@ -57,8 +58,14 @@ class SessionInfo(BaseModel):
 
 @router.post("/", response_model=QueryResponse)
 async def process_query(request: QueryRequest):
-    """질의 처리 엔드포인트 (향상된 AgentHub 활용)"""
+    """질의 처리 엔드포인트 (향상된 AgentHub 활용, 자동 세션 생성)"""
     try:
+        # 세션 ID 자동 생성 (없는 경우)
+        original_session_id = request.session_id
+        request.session_id = ensure_valid_session_id(request.session_id, "query_session")
+        if original_session_id != request.session_id:
+            logger.info(f"자동 생성된 세션 ID: {request.session_id}")
+        
         # AgentHub 사용 시도
         agent_hub = await get_agent_hub()
         
@@ -118,8 +125,14 @@ async def process_query(request: QueryRequest):
             raise HTTPException(status_code=500, detail=str(e))
 
 async def _fallback_query_processing(request: QueryRequest) -> QueryResponse:
-    """Fallback: 기존 QueryChain 사용"""
+    """Fallback: 기존 QueryChain 사용 (자동 세션 생성 포함)"""
     try:
+        # 세션 ID 자동 생성 (Fallback에서도 보장)
+        original_session_id = request.session_id
+        request.session_id = ensure_valid_session_id(request.session_id, "query_session")
+        if original_session_id != request.session_id:
+            logger.info(f"Fallback에서 자동 생성된 세션 ID: {request.session_id}")
+        
         from api.chains.query_chain import QueryChain
         
         db = await get_database()

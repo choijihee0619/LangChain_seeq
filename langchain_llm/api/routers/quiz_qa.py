@@ -1,10 +1,11 @@
 """
 퀴즈 QA 기능 확장 API 라우터
-답안 제출, 자동 채점, 점수 저장 시스템
+답안 제출, 자동 채점, 점수 저장 시스템 (자동 세션 생성 지원)
 
 CREATED 2025-01-27: QA 기능 확장 구현
 - Phase 1: 답안 제출 API / 자동 채점 로직 / 점수 저장 시스템
 - Phase 2: 세션 관리 / 개인 통계 / 퀴즈 기록 조회
+UPDATED: 자동 세션 ID 생성 기능 추가
 """
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -14,6 +15,7 @@ import uuid
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from database.connection import get_database
 from utils.logger import get_logger
+from utils.session import ensure_valid_session_id, generate_quiz_session_id
 
 logger = get_logger(__name__)
 router = APIRouter()
@@ -32,7 +34,7 @@ class QuizAnswer(BaseModel):
 
 class QuizSubmission(BaseModel):
     """퀴즈 제출 모델"""
-    session_id: str = Field(..., description="퀴즈 세션 ID")
+    session_id: Optional[str] = Field(None, description="퀴즈 세션 ID (자동 생성 가능)")
     folder_id: Optional[str] = Field(None, description="폴더 ID")
     quiz_topic: Optional[str] = Field(None, description="퀴즈 주제")
     answers: List[QuizAnswer] = Field(..., description="모든 답안 리스트")
@@ -223,10 +225,16 @@ class QuizGrader:
 @router.post("/submit", response_model=QuizSessionResult)
 async def submit_quiz(submission: QuizSubmission):
     """
-    퀴즈 제출 및 자동 채점 API
+    퀴즈 제출 및 자동 채점 API (자동 세션 생성 지원)
     Phase 1 핵심 기능: 답안 제출 + 자동 채점 + 점수 저장
     """
     try:
+        # 세션 ID 자동 생성 (없는 경우)
+        original_session_id = submission.session_id
+        submission.session_id = ensure_valid_session_id(submission.session_id, "quiz_session")
+        if original_session_id != submission.session_id:
+            logger.info(f"자동 생성된 퀴즈 세션 ID: {submission.session_id}")
+        
         db = await get_database()
         
         # 1. 자동 채점 수행
