@@ -20,7 +20,7 @@ OpenAI GPT-4o-mini와 MongoDB를 활용한 차세대 RAG(Retrieval Augmented Gen
 
 ## 🎯 시스템 개요
 
-SEEQ RAG는 다양한 문서 포맷을 자동 처리하여 AI 기반 질의응답, 요약, 키워드 추출, 콘텐츠 추천을 제공하는 통합 백엔드 시스템입니다.
+SEEQ는 다양한 문서 포맷을 자동 처리하여 AI 기반 질의응답, 요약, 키워드 추출, 콘텐츠 추천을 제공하는 통합 백엔드 시스템입니다.
 
 ### 핵심 특징
 - **🤖 AI 통합 분석**: GPT-4o-mini 기반 질의응답 및 문서 분석
@@ -31,7 +31,84 @@ SEEQ RAG는 다양한 문서 포맷을 자동 처리하여 AI 기반 질의응�
 - **⚡ 최적화된 성능**: 코드 정리 및 최적화로 깔끔한 프로덕션 환경
 - **🔗 OCR 브릿지 통합**: 기존 OCR 데이터베이스와 안전한 브릿지 연결
 
-## 🆕 최신 업데이트 (2025-01-20)
+### 📋 시스템 구성 요소별 역할
+
+#### 🎯 **질의응답 시스템**
+- **구성요소**: `query.py` → `AgentHub` → `HybridResponder`
+- **핵심역할**: 유사도 점수별 3단계 응답 전략 제공
+- **vector_based (0.8+)**: 높은 관련성 문서 기반 + 출처 정보 포함
+- **hybrid (0.3-0.8)**: 부분적 문서 + 일반 지식 결합 응답
+- **general_knowledge (0.3 미만)**: 명시적 "문서 없음" + 일반 지식 응답
+
+#### 🔍 **검색 시스템**
+- **vector_search.py**: 텍스트 임베딩 → 코사인 유사도 → 청크 기반 의미적 검색
+- **hybrid_search.py**: 벡터 검색 + 키워드 검색 + 라벨/카테고리 필터링 결합
+- **context_builder.py**: 검색 결과 → LLM 프롬프트용 컨텍스트 변환 + 토큰 관리
+- **핵심역할**: 정확성(벡터) + 정밀성(키워드) + 가독성(컨텍스트) 3단계 파이프라인
+
+#### 📄 **데이터 처리 시스템**
+- **loader.py**: PDF/DOCX/TXT 파일 → 텍스트 추출
+- **chunker.py**: 긴 문서 → 작은 조각(청크)으로 분할
+- **embedder.py**: 텍스트 → 벡터 임베딩 변환 (OpenAI embedding)
+- **document_processor.py**: 전체 파이프라인 통합 관리 + MongoDB 저장
+
+#### 🤖 **AI 처리 시스템**
+- **llm_client.py**: OpenAI GPT-4o-mini API 연동 클라이언트
+- **auto_labeler.py**: 문서 자동 분류 + 카테고리/태그 생성
+- **qa_generator.py**: 문서 내용 기반 자동 질문-답변 쌍 생성
+- **핵심역할**: 문서 이해 → 자동 분류 → 학습용 QA 데이터 생성
+
+#### 🗄️ **데이터베이스 시스템**
+- **connection.py**: MongoDB 연결 관리 + 인덱스 생성 + 벡터 검색 지원
+- **operations.py**: 문서/청크 CRUD 작업 + 검색 최적화
+- **ocr_bridge.py**: 외부 OCR 시스템과 연동 + 기존 데이터 안전 보존
+- **핵심역할**: 벡터 DB + 문서 DB + OCR 통합 데이터 관리
+
+#### 🛠️ **유틸리티 시스템**
+- **youtube_api.py**: YouTube Data API 연동 + 영상 메타데이터 수집
+- **web_recommendation.py**: 웹 크롤링 + 관련 리소스 추천 시스템
+- **text_collector.py**: 다양한 소스에서 텍스트 수집 + 정제
+- **logger.py**: 시스템 전체 로깅 + 디버깅 지원
+
+#### 🌐 **API 서비스 시스템**
+- **upload.py**: 파일 업로드 + 자동 처리 + 벡터화 파이프라인
+- **summary.py**: 문서 자동 요약 생성 (LLM 기반)
+- **quiz.py/quiz_qa.py**: AI 기반 퀴즈 문제 자동 생성
+- **mindmap.py**: 문서 구조 시각화 + 마인드맵 데이터 생성
+- **keywords.py**: 핵심 키워드 추출 + 문서 태깅
+- **recommend.py**: 관련 문서 추천 + 유사도 기반 제안
+- **folders.py**: 계층적 폴더 구조 관리 + 권한 제어
+- **ocr_bridge.py**: OCR 데이터 동기화 + 통계 제공
+
+#### 🔗 **전체 시스템 흐름**
+**파일 업로드** → **텍스트 추출** → **청킹** → **임베딩** → **MongoDB 저장** → **검색** → **컨텍스트 생성** → **AI 응답** → **사용자 전달**
+
+각 구성 요소가 **교육 및 문서 관리**에 특화된 **완전한 RAG 생태계**를 형성합니다!
+
+## 🆕 최신 업데이트 (2025-06-08)
+
+### 🎓 퀴즈 QA 기능 확장 (신규 완료)
+- **📝 답안 제출 API**: `POST /quiz-qa/submit` - 실시간 퀴즈 제출 및 자동 채점
+- **🤖 자동 채점 시스템**: 객관식/OX/단답형 지능형 채점 + A-F 등급 자동 산출
+- **💾 점수 저장 시스템**: `quiz_sessions`, `quiz_submissions` 컬렉션 기반 완전 추적
+- **📊 개인 통계 API**: 평균 점수, 선호 주제, 약점 영역 자동 분석
+- **📋 퀴즈 기록 조회**: 세션별 상세 기록 및 전체 기록 조회 기능
+- **🗑️ 세션 관리**: 퀴즈 세션 조회, 삭제 및 완전한 CRUD 지원
+
+### 🤖 하이브리드 응답 시스템 강화 (완료)
+- **🎯 지능형 응답 전략**: 벡터 유사도 기반 3단계 응답 시스템
+  - **vector_based (0.8+ 유사도)**: 높은 관련성 문서 기반 응답 + 출처 정보
+  - **hybrid (0.3-0.8 유사도)**: 부분적 문서 + 일반 지식 결합
+  - **general_knowledge (0.3 미만)**: 명시적 "없음" 알림 + 일반 지식 응답
+- **📎 출처 정보 강화**: 모든 응답에 원본 파일명 및 신뢰도 점수 포함
+- **🔄 OpenAI 직접 연동**: LangChain 호환성 문제 해결로 안정성 극대화
+- **💬 대화형 메모리**: 세션별 대화 기록 유지 및 컨텍스트 인식
+
+### 🔧 LangChain 아키텍처 최적화
+- **AgentHub 중앙 관리**: 모든 AI 에이전트의 통합 관리 시스템
+- **하이브리드 접근법**: 안정성은 OpenAI 직접, 확장성은 LangChain
+- **도구 생태계**: VectorSearch, Summary, Quiz, Recommend 도구 체인 구현
+- **메모리 관리**: ConversationBuffer, SessionMemory 완전 통합
 
 ### 🧹 코드베이스 정리 및 최적화 (완료)
 - **🗑️ 캐시 파일 정리**: 모든 `__pycache__` 폴더 삭제로 ~200KB 절약
@@ -70,12 +147,12 @@ SEEQ RAG는 다양한 문서 포맷을 자동 처리하여 AI 기반 질의응�
 - **스마트 청킹**: 500자 단위, 50자 오버랩으로 컨텍스트 보존
 - **정규화된 폴더 관리**: ObjectId 기반 참조 무결성으로 안정적 분류
 
-### 🤖 AI 기능
-- **질의응답**: RAG 기반 문맥 인식 Q&A (출처 정보 포함)
-- **문서 요약**: brief/detailed/bullets 형태로 맞춤 요약
-- **키워드 추출**: AI 기반 핵심 개념 자동 추출
-- **퀴즈 생성**: 객관식/OX/주관식 문제 자동 생성
-- **마인드맵**: 개념 간 연관관계 시각화 데이터
+### 🤖 AI 기능 
+- **📄 문서 요약**: brief/detailed/bullets 형태로 맞춤 요약
+- **🏷️ 키워드 추출**: AI 기반 핵심 개념 자동 추출
+- **🧩 퀴즈 생성**: 객관식/OX/주관식 문제 자동 생성
+- **🧠 마인드맵**: 개념 간 연관관계 시각화 데이터
+- **🎓 퀴즈 QA 시스템**: 실시간 채점, 개인 통계, 성과 분석
 
 ### 🔍 검색 엔진
 - **자연어 파일 검색**: 파일명 + 내용 통합 검색
@@ -84,199 +161,61 @@ SEEQ RAG는 다양한 문서 포맷을 자동 처리하여 AI 기반 질의응�
 
 ### 💡 추천 시스템 (하이브리드 멀티소스)
 - **🌐 웹 검색 추천**: LLM과 실시간 웹 검색을 통한 도서/영화/비디오 추천
-  - **🛡️ 환각 방지 시스템**: 검색 결과에 명시된 정보만 사용, 추측 금지
-  - **✅ 신뢰성 검증**: 추천 내용의 필수 필드 및 키워드 포함 여부 검증
-  - **⚠️ 면책 메타데이터**: 모든 웹 추천에 확인 필요 안내 포함
 - **🔴 YouTube 실시간**: YouTube API 기반 관련 교육 동영상 추천  
 - **🗄️ 데이터베이스**: 저장된 추천 데이터 검색
 - **📁 파일 기반**: 업로드 문서 자동 분석 후 맞춤 콘텐츠 추천
 
-#### 🛡️ 웹 검색 추천 환각 방지 시스템
 
-**LLM 프롬프트 템플릿 강화:**
-- 검색 결과에 명시된 정보만 사용하도록 제한
-- 추측이나 가정 기반 내용 생성 금지
-- 불확실한 정보 포함 시 빈 배열 반환
-- Temperature 0.1로 창의성 최소화
-
-**신뢰성 검증 시스템:**
-- `_validate_recommendation()`: 추천 결과 품질 검증
-- 필수 필드 존재 여부 확인 (title, content_type, description, source)
-- 키워드 포함 여부 검증
-- 설명 길이 최소 기준 (20자 이상) 확인
-
-**면책 메타데이터 자동 추가:**
-모든 웹 검색 기반 추천에 다음 메타데이터 포함:
-```json
-{
-  "metadata": {
-    "disclaimer": "웹 검색 기반 일반적 추천으로, 실제 존재 여부를 확인하시기 바랍니다",
-    "recommendation_type": "general_guidance",
-    "verification_required": true,
-    "generated_by": "web_search_template",
-    "reliability": "template_based"
-  }
-}
-```
 
 ## 🛠️ 기술 스택
 
 | 구분 | 기술 | 용도 |
 |------|------|------|
 | **LLM** | GPT-4o-mini | 질의응답, 요약, 키워드 추출 |
+| **하이브리드 응답** | OpenAI + LangChain | 안정성과 확장성 동시 확보 |
 | **임베딩** | text-embedding-3-large | 1536차원 벡터 생성 |
 | **데이터베이스** | MongoDB | 문서/벡터 통합 저장 |
 | **외부 DB 연동** | OCR Bridge | 기존 OCR 데이터베이스 안전 연결 |
 | **웹 프레임워크** | FastAPI | REST API 서버 |
-| **AI 프레임워크** | LangChain | LLM 체인 관리 |
+| **AI 프레임워크** | LangChain | LLM 체인 관리 및 도구 생태계 |
+| **메모리 관리** | ConversationBuffer | 세션별 대화 기록 유지 |
 | **비동기 처리** | motor | MongoDB 비동기 드라이버 |
 | **외부 API** | YouTube Data API v3 | 실시간 동영상 추천 |
 | **웹 검색** | httpx + LLM | 실시간 웹 크롤링 및 콘텐츠 파싱 |
 | **문서 처리** | PyPDF2, python-docx | 다양한 포맷 파싱 |
-| **🛡️ 환각 방지** | Temperature 0.1 + 검증 시스템 | LLM 환각 최소화 및 신뢰성 검증 |
 
 ## 🏗️ 시스템 아키텍처
 
-### 데이터 처리 파이프라인
+### 핵심 아키텍처
 ```
-📁 파일 업로드
-    ↓
-🔍 파일 검증 (포맷/크기)
-    ↓
-📄 텍스트 추출 (PDF/DOCX/TXT)
-    ↓
-✂️ 텍스트 청킹 (500자 단위)
-    ↓
-🧠 임베딩 생성 (OpenAI)
-    ↓
-💾 MongoDB 저장 (documents + chunks)
-    ↓
-🛡️ AI 라벨링 (키워드/카테고리) + 🛡️ 환각 방지 검증
-    ↓
-✅ 처리 완료
+📁 파일 업로드 → 📄 텍스트 추출 → ✂️ 청킹 → 🧠 임베딩 → 💾 MongoDB 저장
+                                                                        ↓
+🗂️ OCR Database ←→ 🌉 OCR Bridge ←→ 📁 RAG Database ←→ 🔍 검색 엔진
+                                                                        ↓
+❓ 사용자 질의 → 📊 유사도 평가 → 📈 응답 전략 → 🤖 AI 생성 → ✨ 최종 응답
 ```
 
-### OCR 데이터베이스 브릿지 아키텍처
+### 모듈 구조 (간소화)
 ```
-🗂️ 기존 OCR Database (ocr_db.texts)
-    ↓ (안전한 브릿지 연결)
-🌉 OCR Bridge System
-    ↓ (메타데이터 동기화)
-📁 RAG Database (seeq_rag)
-    ↓ (통합 검색)
-🔍 통합 검색 및 AI 분석
+langchain_llm/
+├── main.py                    # FastAPI 서버 진입점
+├── requirements.txt           # 의존성 패키지 (52개)
+├── api/                       # 🌐 REST API 계층
+│   ├── routers/              # 엔드포인트 라우터들  
+│   └── chains/               # LangChain 비즈니스 로직
+├── ai_processing/            # 🤖 AI 처리 모듈
+├── seeq_langchain/           # 🔗 LangChain 통합 아키텍처
+│   ├── agents/              # AI 에이전트 생태계
+│   ├── chains/              # 체인 시스템
+│   ├── tools/               # 도구 생태계
+│   ├── memory/              # 대화 메모리
+│   └── vectorstore/         # 벡터스토어 연동
+├── data_processing/          # 📄 문서 처리 파이프라인
+├── database/                 # 💾 MongoDB 관리
+├── retrieval/                # 🔍 검색 엔진
+├── utils/                    # 🛠️ 유틸리티 & 외부 API
+└── config/                   # ⚙️ 설정 관리
 ```
-
-**🔗 OCR 브릿지 특징:**
-- **안전한 데이터 보존**: 기존 OCR 데이터를 건드리지 않고 참조만 수행
-- **자동 동기화**: 새로운 OCR 데이터 자동 감지 및 동기화
-- **통합 검색**: RAG 시스템에서 업로드 문서와 OCR 데이터 통합 검색
-- **폴더 분리**: "OCR 텍스트" 전용 폴더로 데이터 분류 관리
-
-### 질의응답 흐름
-```
-❓ 사용자 질의
-    ↓
-🔍 벡터 유사도 검색 (chunks 컬렉션)
-    ↓
-📋 관련 문서 청크 수집
-    ↓
-🤖 LLM 컨텍스트 생성
-    ↓
-💬 GPT-4o-mini 답변 생성
-    ↓
-📎 출처 정보 첨부
-    ↓
-✨ 최종 응답 반환
-```
-
-### 모듈 구조
-```
-rag-backend/                                   # 📁 총 ~750KB (정리 후)
-├── 🔧 설정 및 환경 파일
-│   ├── .env                          # 환경 변수 설정 (API 키, DB 연결 정보)
-│   ├── .env.example                  # 환경 변수 템플릿 파일
-│   ├── .gitignore                    # Git 버전 관리 제외 파일 목록
-│   ├── main.py                       # FastAPI 메인 애플리케이션 & 서버 진입점 (79 lines)
-│   └── requirements.txt              # Python 의존성 패키지 목록 (42개 패키지)
-│
-├── 📚 API 계층 (FastAPI 라우터 & 비즈니스 로직) - 360KB
-│   ├── api/
-│   │   ├── __init__.py              # API 패키지 초기화
-│   │   ├── 🌐 routers/              # REST API 엔드포인트
-│   │   │   ├── __init__.py          # 라우터 패키지 초기화
-│   │   │   ├── upload.py            # 📤 파일 업로드/관리/검색 API (934 lines, 정리됨)
-│   │   │   ├── query.py             # 💬 RAG 질의응답 API (53 lines)
-│   │   │   ├── summary.py           # 📄 문서 요약 API (116 lines)
-│   │   │   ├── quiz.py              # 🧩 퀴즈 생성 API (179 lines)
-│   │   │   ├── keywords.py          # 🏷️ 키워드 추출 API (118 lines)
-│   │   │   ├── mindmap.py           # 🧠 마인드맵 생성 API (487 lines)
-│   │   │   ├── recommend.py         # 💡 콘텐츠 추천 API (250 lines)
-│   │   │   └── folders.py           # 📁 폴더 관리 API (322 lines)
-│   │   └── 🔗 chains/               # LangChain 비즈니스 로직
-│   │       ├── __init__.py          # 체인 패키지 초기화
-│   │       ├── query_chain.py       # RAG 질의응답 체인 로직 (100 lines)
-│   │       ├── summary_chain.py     # 문서 요약 체인 로직 (234 lines)
-│   │       ├── quiz_chain.py        # 퀴즈 생성 체인 로직 (269 lines)
-│   │       └── recommend_chain.py   # 추천 체인 로직 (423 lines)
-│
-├── 🤖 AI 처리 모듈 (LLM 및 AI 기능) - 64KB
-│   ├── ai_processing/
-│   │   ├── __init__.py              # AI 처리 패키지 초기화
-│   │   ├── llm_client.py            # OpenAI GPT-4o-mini 클라이언트 (63 lines)
-│   │   ├── auto_labeler.py          # 🛡️ 환각 방지 자동 라벨링 & 키워드 추출 (359 lines)
-│   │   └── qa_generator.py          # 퀴즈 & Q&A 자동 생성기 (190 lines)
-│
-├── 📄 문서 처리 파이프라인 (파일 → 텍스트 → 벡터) - 80KB
-│   ├── data_processing/
-│   │   ├── __init__.py              # 문서 처리 패키지 초기화
-│   │   ├── document_processor.py    # 🔄 통합 문서 처리 파이프라인 (346 lines)
-│   │   ├── loader.py                # 파일 로더 (PDF/DOCX/TXT/DOC/MD) (85 lines)
-│   │   ├── preprocessor.py          # 텍스트 전처리 (정제/정규화) (66 lines)
-│   │   ├── chunker.py              # 텍스트 청킹 (500자 단위, 50자 오버랩) (77 lines)
-│   │   └── embedder.py             # OpenAI 임베딩 생성 (text-embedding-3-large) (63 lines)
-│
-├── 💾 데이터베이스 관리 (MongoDB 연결 & 조작) - 60KB
-│   ├── database/
-│   │   ├── __init__.py              # 데이터베이스 패키지 초기화
-│   │   ├── connection.py            # MongoDB 비동기 연결 관리 (motor) (153 lines)
-│   │   └── operations.py            # CRUD 연산 & 데이터베이스 유틸리티 (359 lines)
-│
-├── 🔍 검색 엔진 (벡터 검색 & 하이브리드 검색) - 60KB
-│   ├── retrieval/
-│   │   ├── __init__.py              # 검색 패키지 초기화
-│   │   ├── vector_search.py         # 벡터 유사도 검색 (numpy 기반) (223 lines)
-│   │   ├── hybrid_search.py         # 하이브리드 검색 (키워드 + 벡터) (94 lines)
-│   │   └── context_builder.py       # RAG용 컨텍스트 구성기 (220 lines)
-│
-├── 🛠️ 유틸리티 모듈 (공통 기능 & 외부 API) - 128KB
-│   ├── utils/
-│   │   ├── __init__.py              # 유틸리티 패키지 초기화
-│   │   ├── logger.py                # Loguru 기반 로깅 시스템 (35 lines)
-│   │   ├── validators.py            # 입력 데이터 검증 함수 (37 lines)
-│   │   ├── text_collector.py        # 📝 텍스트 수집 통합 유틸리티 (187 lines)
-│   │   ├── youtube_api.py           # 🔴 YouTube Data API v3 연동 (346 lines)
-│   │   └── web_recommendation.py    # 🛡️ 웹 검색 기반 추천 (환각 방지, 550 lines)
-│
-├── ⚙️ 설정 관리 - 12KB
-│   ├── config/
-│   │   ├── __init__.py              # 설정 패키지 초기화
-│   │   └── settings.py              # Pydantic 기반 환경 설정 관리 (42 lines)
-│
-├── 📁 업로드 디렉토리 - 0B (비어있음, 정리됨)
-│   └── uploads/                     # 임시 파일 업로드 저장소 (자동 정리됨)
-│
-└── 📝 로그 디렉토리 - 4KB (정리됨)
-    └── logs/
-        └── app.log                  # 애플리케이션 로그 파일 (0B, 초기화됨)
-```
-
-**🧹 정리 완료 요약:**
-- ✅ **Python 캐시**: 모든 `__pycache__` 삭제
-- ✅ **로그 파일**: 185KB → 0B 초기화
-- ✅ **디버그 코드**: 65줄 제거 (프로덕션 최적화)
-- ✅ **임시 파일**: 모든 업로드 임시 파일 정리
-- ✅ **코드 품질**: 중복 제거, 최적화된 구조
 
 ## 💾 데이터베이스 구조
 
@@ -296,33 +235,32 @@ rag-backend/                                   # 📁 총 ~750KB (정리 후)
                           │
                           │ (ObjectId 참조)
                           │
-            ┌─────────────┼─────────────┬─────────────┬─────────────┐
-            │             │             │             │             │
-            ▼             ▼             ▼             ▼             ▼
+            ┌─────────────┼─────────────┬─────────────┬─────────────┬─────────────┬─────────────┐
+            │             │             │             │             │             │             │
+            ▼             ▼             ▼             ▼             ▼             ▼             ▼
                                                               
-      📄 documents    📦 chunks     📋 summaries   🧩 qapairs   💡 recommendations
-      │              │             │              │             │
-      │ folder_id ───┘             │              │             │
-      │ chunk_sequence              │              │             │
-      │ raw_text                    │              │             │
-      │ text_embedding              │              │             │
-      │ file_metadata               │              │             │
-      │   ├─ file_id               │              │             │
-      │   ├─ filename              │              │             │
-      │   ├─ file_type             │              │             │
-      │   └─ data_source           │              │             │
-      │                            │              │             │
-      └─── file_id ────────────────┼──────────────┼─────────────┼─────────────┐
-                                   │              │             │             │
-                                   │              │             │             ▼
-                            folder_id ──┘  folder_id ──┘  folder_id ──┘      
-                            summary_type    question_type   content_type    🏷️ labels
-                            content         question        title           │ document_id ──┘
-                            word_count      answer          description     │ folder_id ────┘
-                                           quiz_options     source          │ main_topic
-                                                                           │ tags[]
-                                                                           │ category
-                                                                           │ confidence
+      📄 documents    📦 chunks     📋 summaries   🧩 qapairs   💡 recommendations  🎓 quiz_sessions  📝 quiz_submissions
+      │              │             │              │             │             │               │
+      │ folder_id ───┘             │              │             │             │               │
+      │ chunk_sequence              │              │             │             │               │
+      │ raw_text                    │              │             │             │               │
+      │ text_embedding              │              │             │             │               │
+      │ file_metadata               │              │             │             │               │
+      │   ├─ file_id               │              │             │             │               │
+      │   ├─ filename              │              │             │             │               │
+      │   ├─ file_type             │              │             │             │               │
+      │   └─ data_source           │              │             │             │               │
+      │                            │              │             │             │               │
+      └─── file_id ────────────────┼──────────────┼─────────────┼─────────────┼───────────────┼─────────────┐
+                                   │              │             │             │               │             │
+                                   │              │             │             │               │             ▼
+                            folder_id ──┘  folder_id ──┘  folder_id ──┘  session_id    session_id     🏷️ labels
+                            summary_type    question_type   content_type    folder_id     question_id   │ document_id ──┘
+                            content         question        title           quiz_topic    quiz_type     │ folder_id ────┘
+                            word_count      answer          description     total_score   user_answer   │ main_topic
+                                           quiz_options     source          percentage    is_correct    │ tags[]
+                                                                           grade         score          │ category
+                                                                           submitted_at  time_spent     │ confidence
 
 ══════════════════════════════════════════════════════════════════════════════════════════════════
 
@@ -349,6 +287,8 @@ rag-backend/                                   # 📁 총 ~750KB (정리 후)
 │ recommendations │ folder_id       │ 1:N - 하나의 폴더에 여러 추천 콘텐츠             │
 │ labels          │ folder_id       │ 1:N - 하나의 폴더에 여러 AI 라벨                │
 │ labels          │ document_id     │ 1:1 - 하나의 문서에 하나의 라벨 (고유)           │
+│ quiz_sessions   │ folder_id       │ 1:N - 하나의 폴더에 여러 퀴즈 세션              │
+│ quiz_submissions│ session_id      │ 1:N - 하나의 세션에 여러 답안 제출              │
 │ file_info       │ folder_id       │ 1:N - 하나의 폴더에 여러 파일 처리 기록          │
 │ OCR Bridge      │ ocr_db.texts    │ 참조 - 원본 OCR 데이터 안전 참조               │
 └─────────────────┴─────────────────┴─────────────────────────────────────────────────────┘
@@ -361,6 +301,8 @@ rag-backend/                                   # 📁 총 ~750KB (정리 후)
    ├─ qapairs (folder_id 기준)
    ├─ recommendations (folder_id 기준)
    ├─ labels (folder_id 기준)
+   ├─ quiz_sessions (folder_id 기준) - 퀴즈 세션 데이터
+   ├─ quiz_submissions (session_id 기준) - 퀴즈 답안 데이터
    └─ file_info (folder_id 기준)
    
    주의: 원본 OCR 데이터(ocr_db.texts)는 안전하게 보존됨
@@ -485,7 +427,45 @@ rag-backend/                                   # 📁 총 ~750KB (정리 후)
 }
 ```
 
-### 8. `file_info` 컬렉션 (파일 처리 상태 추적)
+### 8. `quiz_sessions` 컬렉션 (퀴즈 세션 관리) - 신규
+```javascript
+{
+  "_id": ObjectId("..."),
+  "session_id": "api_test_92a18f1f",            // 고유 세션 ID
+  "folder_id": "674a1b2c3d4e5f6789abcdef",      // ObjectId 문자열 참조
+  "quiz_topic": "머신러닝 기초",                 // 퀴즈 주제
+  "total_questions": 5,                         // 총 문제 수
+  "correct_answers": 3,                         // 정답 수
+  "wrong_answers": 2,                           // 오답 수
+  "total_score": 3.0,                           // 총 점수
+  "percentage": 60.0,                           // 정답률 (%)
+  "grade": "D",                                 // A, B, C, D, F 등급
+  "total_time": 190,                            // 총 소요 시간 (초)
+  "submitted_at": ISODate("2025-01-27T10:00:00Z"), // 제출 시간
+  "created_at": ISODate("2025-01-27T10:00:00Z")
+}
+```
+
+### 9. `quiz_submissions` 컬렉션 (개별 답안 관리) - 신규
+```javascript
+{
+  "_id": ObjectId("..."),
+  "session_id": "api_test_92a18f1f",            // 세션 ID 참조
+  "question_id": "q1",                          // 문제 고유 ID
+  "question_text": "다음 중 머신러닝의 주요 유형이 아닌 것은?",
+  "quiz_type": "multiple_choice",               // multiple_choice, true_false, short_answer
+  "user_answer": 1,                             // 사용자 답안
+  "correct_answer": 1,                          // 정답
+  "is_correct": true,                           // 정답 여부
+  "score": 1.0,                                 // 문제당 점수 (0.0 또는 1.0)
+  "options": ["비지도학습", "지도학습", "강화학습", "데이터마이닝"], // 객관식 선택지
+  "time_spent": 30,                             // 문제당 소요 시간 (초)
+  "question_order": 1,                          // 문제 순서
+  "created_at": ISODate("2025-01-27T10:00:00Z")
+}
+```
+
+### 10. `file_info` 컬렉션 (파일 처리 상태 추적)
 ```javascript
 {
   "_id": ObjectId("..."),
@@ -534,7 +514,7 @@ rag-backend/                                   # 📁 총 ~750KB (정리 후)
 - **⚡ 성능 최적화**: 메타데이터만 복사하여 빠른 검색 및 처리
 - **🛡️ 데이터 안전성**: 원본 OCR 데이터는 절대 수정하지 않음
 
-### 📊 최적화된 인덱스 (총 42개)
+### 📊 최적화된 인덱스 (총 55개)
 
 **데이터베이스 성능 최적화를 위한 전략적 인덱스 설계**
 - 🔍 **검색 속도 200배 향상**: 폴더별, 키워드별, 날짜별 빠른 검색
@@ -600,7 +580,110 @@ db.file_info.createIndex({ "folder_id": 1 })                    // 폴더별 파
 db.file_info.createIndex({ "processing_status": 1 })            // 처리 상태별 검색 (processing/completed/failed)
 db.file_info.createIndex({ "created_at": -1 })                  // 최신 처리 기록 우선 정렬
 db.file_info.createIndex({ "failed_at": -1 })                   // 실패 시간 순 정렬 (재처리 우선순위)
+
+// quiz_sessions 컬렉션 (7개) - 퀴즈 세션 관리 최적화 (신규)
+db.quiz_sessions.createIndex({ "session_id": 1 }, { unique: true }) // 세션 ID 중복 방지 + 빠른 조회
+db.quiz_sessions.createIndex({ "folder_id": 1 })                // 폴더별 퀴즈 세션 검색
+db.quiz_sessions.createIndex({ "quiz_topic": 1 })               // 주제별 퀴즈 세션 검색
+db.quiz_sessions.createIndex({ "submitted_at": -1 })            // 최신 제출 순 정렬
+db.quiz_sessions.createIndex({ "percentage": -1 })              // 고득점 순 정렬
+db.quiz_sessions.createIndex({ "grade": 1 })                    // 등급별 필터링 (A, B, C, D, F)
+db.quiz_sessions.createIndex({ "created_at": -1 })              // 생성 시간 순 정렬
+
+// quiz_submissions 컬렉션 (6개) - 퀴즈 답안 관리 최적화 (신규)
+db.quiz_submissions.createIndex({ "session_id": 1 })            // 세션별 모든 답안 빠른 조회
+db.quiz_submissions.createIndex({ "question_id": 1 })           // 특정 문제의 모든 답안 검색
+db.quiz_submissions.createIndex({ "quiz_type": 1 })             // 문제 유형별 답안 분석
+db.quiz_submissions.createIndex({ "is_correct": 1 })            // 정답/오답별 통계 분석
+db.quiz_submissions.createIndex({ "question_order": 1 })        // 문제 순서별 정렬
+db.quiz_submissions.createIndex({ "created_at": -1 })           // 제출 시간 순 정렬
 ```
+
+## 📚 API 엔드포인트 가이드
+
+### 🎓 퀴즈 QA 시스템 API (신규)
+
+#### 1. 퀴즈 답안 제출 및 채점
+```http
+POST /quiz-qa/submit
+Content-Type: application/json
+
+{
+  "session_id": "unique_session_id",
+  "folder_id": "folder_object_id",
+  "quiz_topic": "머신러닝 기초",
+  "answers": [
+    {
+      "question_id": "q1",
+      "question_text": "다음 중 머신러닝의 주요 유형이 아닌 것은?",
+      "quiz_type": "multiple_choice",
+      "user_answer": 1,
+      "correct_answer": 1,
+      "options": ["비지도학습", "지도학습", "강화학습", "데이터마이닝"],
+      "time_spent": 30
+    }
+  ]
+}
+```
+
+**응답:**
+```json
+{
+  "message": "퀴즈가 성공적으로 제출되었습니다",
+  "session_id": "unique_session_id",
+  "total_questions": 5,
+  "correct_answers": 3,
+  "percentage": 60.0,
+  "grade": "D",
+  "total_time": 150
+}
+```
+
+#### 2. 퀴즈 세션 조회
+```http
+GET /quiz-qa/sessions/{session_id}
+```
+
+#### 3. 퀴즈 기록 조회 (페이징)
+```http
+GET /quiz-qa/records?page=1&limit=10&folder_id=optional
+```
+
+#### 4. 개인 통계 조회
+```http
+GET /quiz-qa/stats?folder_id=optional
+```
+
+**응답:**
+```json
+{
+  "total_sessions": 15,
+  "average_score": 78.5,
+  "favorite_topics": ["머신러닝", "데이터베이스"],
+  "weak_areas": ["알고리즘", "네트워크"],
+  "grade_distribution": {
+    "A": 3, "B": 5, "C": 4, "D": 2, "F": 1
+  }
+}
+```
+
+#### 5. 퀴즈 세션 삭제
+```http
+DELETE /quiz-qa/sessions/{session_id}
+```
+
+### 🔄 기존 API 엔드포인트
+
+- **문서 업로드**: `POST /upload/files/`
+- **RAG 질의응답**: `POST /query/ask/`  
+- **문서 요약**: `POST /summary/generate/`
+- **퀴즈 생성**: `POST /quiz/generate/`
+- **키워드 추출**: `POST /keywords/extract/`
+- **마인드맵 생성**: `POST /mindmap/generate/`
+- **콘텐츠 추천**: `GET /recommend/content/`
+- **폴더 관리**: `GET|POST|PUT|DELETE /folders/`
+
+자세한 API 문서는 서버 실행 후 `http://localhost:8000/docs`에서 확인 가능합니다.
 
 ## ⚙️ 설치 및 실행
 
@@ -726,13 +809,66 @@ tail -f logs/app.log
 grep ERROR logs/app.log
 ```
 
+## 🔗 하이브리드 응답 시스템 API
+
+### 💬 질의응답 엔드포인트
+
+**POST `/query/`** - 하이브리드 응답 생성
+```json
+{
+  "query": "AI와 머신러닝의 차이점은?",
+  "session_id": "user_session_123", 
+  "folder_id": "optional_folder_id",
+  "top_k": 5,
+  "include_sources": true
+}
+```
+
+**응답 예시:**
+```json
+{
+  "answer": "AI와 머신러닝의 차이점을 설명드리겠습니다...",
+  "sources": [
+    {
+      "text": "문서 내용 일부...",
+      "score": 0.85,
+      "filename": "AI_기초이론.pdf",
+      "file_id": "uuid-string",
+      "chunk_id": "chunk_identifier"
+    }
+  ],
+  "confidence": 0.9,
+  "strategy": "vector_based",
+  "session_id": "user_session_123",
+  "session_context": {
+    "message_count": 3,
+    "has_history": true
+  }
+}
+```
+
+**응답 전략 타입:**
+- `vector_based`: 높은 관련성 문서 기반 (0.8+ 유사도)
+- `hybrid`: 부분 문서 + 일반 지식 (0.3-0.8 유사도)  
+- `general_knowledge`: 일반 지식만 사용 (0.3 미만)
+
+### 🧠 세션 관리 엔드포인트
+
+**GET `/query/sessions`** - 모든 세션 조회
+**GET `/query/sessions/{session_id}`** - 특정 세션 정보
+**DELETE `/query/sessions/{session_id}`** - 세션 삭제 및 초기화
+
+### 🛠️ 에이전트 정보 엔드포인트
+
+**GET `/query/agent-info`** - AgentHub 상태 및 기능 조회
+
 ## 📈 향후 개발 계획
 
-### 단기 계획 (1-2개월)
-- [ ] **성능 최적화**: 대용량 파일 처리 속도 향상
-- [ ] **배치 처리**: 여러 파일 동시 업로드 기능
-- [ ] **고급 검색**: 날짜/파일타입/크기 필터 추가
-- [ ] **사용자 인증**: JWT 기반 사용자 관리
+### 단기 계획 (1-2개월) - 퀴즈 시스템 확장
+- [ ] **QA 기능 확장**: Quiz Mate 기반 답안 제출 및 자동 채점
+- [ ] **점수 저장 시스템**: 개인 성적 및 학습 통계 관리
+- [ ] **분석 기능**: 개인화된 학습 분석 및 약점 진단
+- [ ] **추천 연동**: 학습 패턴 기반 맞춤형 콘텐츠 추천
 
 ### 중기 계획 (3-6개월)
 - [ ] **다국어 지원**: 영어/일본어 문서 처리
@@ -753,5 +889,5 @@ MIT License - 자유롭게 사용, 수정, 배포 가능
 ---
 
 **💬 문의사항**: 이슈 트래커를 통해 버그 리포트 및 기능 요청 환영  
-**최종 업데이트**: 2024년 12월 20일 - 정규화된 폴더 시스템 구현 완료  
-**⭐ 버전**: v2.1 (정규화된 폴더 시스템 + 데이터베이스 구조 완전 개선)
+**최종 업데이트**: 2025년 1월 27일 - 하이브리드 응답 시스템 및 LangChain 아키텍처 최적화 완료  
+**⭐ 버전**: v2.5 (하이브리드 AI 시스템 + 대화형 메모리 + LangChain 통합)

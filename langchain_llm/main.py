@@ -6,10 +6,9 @@ import os
 import sys
 from pathlib import Path
 
-# 현재 파일의 부모 디렉토리를 Python 경로에 추가
+# 현재 파일의 디렉토리를 Python 경로에 추가
 current_dir = Path(__file__).parent
-project_root = current_dir.parent
-sys.path.insert(0, str(project_root))
+sys.path.insert(0, str(current_dir))
 
 from dotenv import load_dotenv
 
@@ -21,11 +20,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import uvicorn
 
-from langchain_llm.config.settings import settings
-from langchain_llm.database.connection import init_db, close_db
-from langchain_llm.api.routers import query, summary, quiz, keywords, mindmap, recommend, upload, folders
-from langchain_llm.api.routers import ocr_bridge
-from langchain_llm.utils.logger import setup_logger
+from config.settings import settings
+from database.connection import init_db, close_db
+from api.routers import query, summary, quiz, keywords, mindmap, recommend, upload, folders
+from api.routers import ocr_bridge, quiz_qa
+from utils.logger import setup_logger
 
 # 로거 설정
 logger = setup_logger()
@@ -45,9 +44,9 @@ async def lifespan(app: FastAPI):
 
 # FastAPI 앱 생성
 app = FastAPI(
-    title="RAG 백엔드 API",
-    description="OpenAI GPT-4o-mini와 MongoDB를 활용한 RAG 시스템",
-    version="1.0.0",
+    title="RAG 백엔드 API (AgentHub 통합)",
+    description="OpenAI GPT-4o-mini와 MongoDB를 활용한 RAG 시스템 - AgentHub 지원",
+    version="2.0.0",
     lifespan=lifespan
 )
 
@@ -66,6 +65,7 @@ app.include_router(upload.router, prefix="/upload", tags=["Upload"])
 app.include_router(query.router, prefix="/query", tags=["Query"])
 app.include_router(summary.router, prefix="/summary", tags=["Summary"])
 app.include_router(quiz.router, prefix="/quiz", tags=["Quiz"])
+app.include_router(quiz_qa.router, prefix="/quiz-qa", tags=["Quiz QA"])
 app.include_router(keywords.router, prefix="/keywords", tags=["Keywords"])
 app.include_router(mindmap.router, prefix="/mindmap", tags=["Mindmap"])
 app.include_router(recommend.router, prefix="/recommend", tags=["Recommend"])

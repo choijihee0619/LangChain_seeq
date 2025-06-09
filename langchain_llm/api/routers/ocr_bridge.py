@@ -51,15 +51,36 @@ async def get_ocr_statistics():
         stats = await ocr_bridge.get_ocr_stats()
         
         if "error" in stats:
-            raise HTTPException(status_code=500, detail=stats["error"])
+            # OCR 데이터베이스 연결 문제인 경우 적절한 응답 반환
+            if "연결" in stats["error"] or "설정" in stats["error"]:
+                return OCRStatsResponse(
+                    total_documents=0,
+                    last_updated=None,
+                    text_stats={
+                        "average_length": 0,
+                        "max_length": 0,
+                        "min_length": 0
+                    },
+                    database_info={
+                        "source_db": "ocr_db.texts",
+                        "integration_type": "bridge",
+                        "data_preservation": "OCR 데이터베이스 연결 불가",
+                        "sync_status": f"연결 오류: {stats['error']}"
+                    }
+                )
+            else:
+                raise HTTPException(status_code=500, detail=stats["error"])
         
         return OCRStatsResponse(**stats)
         
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"OCR 통계 조회 실패: {e}")
         raise HTTPException(status_code=500, detail=f"통계 조회 중 오류 발생: {str(e)}")
     finally:
-        await ocr_bridge.close_ocr_db()
+        if 'ocr_bridge' in locals():
+            await ocr_bridge.close_ocr_db()
 
 @router.post("/sync", response_model=OCRSyncResponse)
 async def sync_ocr_data(
@@ -99,10 +120,10 @@ async def sync_ocr_data(
     finally:
         await ocr_bridge.close_ocr_db()
 
-@router.get("/health")
-async def check_ocr_bridge_health():
+@router.get("/status")
+async def check_ocr_bridge_status():
     """
-    OCR 브릿지 연결 상태 확인
+    OCR 브릿지 연결 상태 확인 (/status 엔드포인트)
     
     - OCR 데이터베이스 연결 테스트
     - RAG 데이터베이스 연결 테스트
@@ -110,27 +131,53 @@ async def check_ocr_bridge_health():
     try:
         ocr_bridge = await get_ocr_bridge()
         
-        # OCR 데이터베이스 연결 테스트
-        await ocr_bridge.connect_ocr_db()
-        ocr_ping = await ocr_bridge.ocr_db.command("ping")
-        
         # RAG 데이터베이스 연결 테스트  
         rag_ping = await ocr_bridge.rag_db.command("ping")
         
-        return {
-            "status": "healthy",
-            "ocr_database": "connected" if ocr_ping else "disconnected",
+        # OCR 데이터베이스 연결 테스트
+        ocr_status = "disconnected"
+        ocr_error = None
+        try:
+            await ocr_bridge.connect_ocr_db()
+            if ocr_bridge.ocr_db:
+                ocr_ping = await ocr_bridge.ocr_db.command("ping")
+                ocr_status = "connected" if ocr_ping else "disconnected"
+            else:
+                ocr_status = "unavailable"
+                ocr_error = "OCR 데이터베이스 설정이 없거나 연결 실패"
+        except Exception as ocr_e:
+            ocr_status = "error"
+            ocr_error = str(ocr_e)
+        
+        bridge_status = "operational" if rag_ping else "degraded"
+        overall_status = "healthy" if rag_ping else "unhealthy"
+        
+        result = {
+            "status": overall_status,
+            "ocr_database": ocr_status,
             "rag_database": "connected" if rag_ping else "disconnected",
-            "bridge_status": "operational",
-            "timestamp": datetime.utcnow().isoformat()
+            "bridge_status": bridge_status,
+            "timestamp": datetime.utcnow().isoformat(),
+            "notes": {
+                "ocr_functionality": "OCR 브릿지는 선택적 기능입니다",
+                "rag_core": "RAG 핵심 기능은 정상 작동"
+            }
         }
+        
+        if ocr_error:
+            result["ocr_error"] = ocr_error
+            
+        return result
         
     except Exception as e:
         logger.error(f"OCR 브릿지 상태 확인 실패: {e}")
         return {
-            "status": "unhealthy",
+            "status": "error",
             "error": str(e),
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.utcnow().isoformat(),
+            "notes": {
+                "message": "브릿지 상태 확인 중 오류 발생"
+            }
         }
     finally:
         if 'ocr_bridge' in locals():
@@ -153,6 +200,14 @@ async def get_or_create_ocr_folder():
         folder_info = await ocr_bridge.rag_db.folders.find_one(
             {"_id": ObjectId(folder_id)}
         )
+        
+        # ObjectId를 문자열로 변환
+        if folder_info and "_id" in folder_info:
+            folder_info["_id"] = str(folder_info["_id"])
+            # datetime 객체도 문자열로 변환
+            for key, value in folder_info.items():
+                if isinstance(value, datetime):
+                    folder_info[key] = value.isoformat()
         
         return {
             "folder_id": folder_id,
@@ -180,8 +235,8 @@ async def ocr_bridge_info():
         "status": "동기화 완료 - 일반 검색 사용 권장",
         "endpoints": {
             "stats": "OCR 원본 데이터베이스 통계",
-            "sync": "OCR 데이터 동기화",
-            "health": "브릿지 상태 확인",
+            "sync": "OCR 데이터 동기화", 
+            "status": "브릿지 상태 확인",
             "folder/ocr": "OCR 폴더 정보"
         },
         "usage_guide": {

@@ -31,6 +31,9 @@ class OCRBridge:
             ocr_mongodb_uri = settings.OCR_MONGODB_URI or settings.MONGODB_URI
             ocr_db_name = settings.OCR_DB_NAME
             
+            if not ocr_mongodb_uri:
+                raise ValueError("OCR_MONGODB_URI 또는 MONGODB_URI가 설정되지 않음")
+            
             self.ocr_client = AsyncIOMotorClient(ocr_mongodb_uri)
             self.ocr_db = self.ocr_client[ocr_db_name]
             
@@ -43,7 +46,11 @@ class OCRBridge:
             
         except Exception as e:
             logger.error(f"OCR 데이터베이스 연결 실패: {e}")
-            raise
+            # 연결에 실패해도 예외를 발생시키지 않고 None으로 설정
+            self.ocr_client = None
+            self.ocr_db = None
+            # 대신 경고만 로그로 남김
+            logger.warning("OCR 데이터베이스를 사용할 수 없습니다. OCR 기능이 제한됩니다.")
     
     async def ensure_text_index(self):
         """OCR 데이터베이스에 텍스트 인덱스가 있는지 확인하고 없으면 생성"""
@@ -156,11 +163,25 @@ class OCRBridge:
                 sort=[("timestamp", -1)]
             )
             
-            # 텍스트 길이 통계
+            # 텍스트 길이 통계 (안전한 방식으로 수정)
             pipeline = [
                 {
+                    "$match": {
+                        "text": {"$exists": True, "$type": "string", "$ne": ""}
+                    }
+                },
+                {
                     "$project": {
-                        "text_length": {"$strLenCP": "$text"},
+                        "text_length": {
+                            "$cond": {
+                                "if": {"$and": [
+                                    {"$ne": ["$text", None]},
+                                    {"$eq": [{"$type": "$text"}, "string"]}
+                                ]},
+                                "then": {"$strLenCP": "$text"},
+                                "else": 0
+                            }
+                        },
                         "timestamp": 1
                     }
                 },

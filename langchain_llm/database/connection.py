@@ -91,6 +91,23 @@ class DatabaseConnection:
             await self.db.labels.create_index("confidence_score")
             await self.db.labels.create_index("created_at")
             
+            # quiz_sessions 컬렉션 인덱스 (QA 기능용 - 새로 추가)
+            await self.db.quiz_sessions.create_index("session_id", unique=True)
+            await self.db.quiz_sessions.create_index("folder_id")
+            await self.db.quiz_sessions.create_index("quiz_topic")
+            await self.db.quiz_sessions.create_index("submitted_at")
+            await self.db.quiz_sessions.create_index("percentage")
+            await self.db.quiz_sessions.create_index("grade")
+            await self.db.quiz_sessions.create_index("created_at")
+            
+            # quiz_submissions 컬렉션 인덱스 (QA 기능용 - 새로 추가)
+            await self.db.quiz_submissions.create_index("session_id")
+            await self.db.quiz_submissions.create_index("question_id")
+            await self.db.quiz_submissions.create_index("quiz_type")
+            await self.db.quiz_submissions.create_index("is_correct")
+            await self.db.quiz_submissions.create_index("question_order")
+            await self.db.quiz_submissions.create_index("created_at")
+            
             logger.info("인덱스 생성 완료")
             
         except Exception as e:
