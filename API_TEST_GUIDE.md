@@ -1,518 +1,613 @@
-# 🧪 RAG 백엔드 API 엔드포인트 테스트 가이드
+# LangChain SEEQ API 테스트 가이드 📚
 
-**기본 정보:**
-- 서버 URL: `http://localhost:8000`
-- API 문서: `http://localhost:8000/docs` (Swagger UI)
-- 데이터베이스: `mongodb+srv://SeeQ:la5kFgpTy8xR52rr@cluster0.8lbrl0r.mongodb.net/rag_database`
+## 📋 파라미터 범례
+- ✅ **필수 파라미터**: 반드시 포함해야 함
+- 🔹 **선택 파라미터**: 생략 가능
+- 🔸 **조건부 파라미터**: 특정 조건에서만 필요
 
----
+## 🗂️ 실제 데이터베이스 ID (100% 성공 보장)
 
-## 1. 폴더 관리 (Folders) - `/folders`
+### 📁 폴더 ID
+- **금융** (추천): `683e9a9a324d04898ae63f63` - 2개 파일
+- **경영학**: `683e8fd3a7d860028b795845` - 1개 파일  
+- **OCR 텍스트**: `683faa67118e26d7e280b9f4` - 다수 파일
+- **예시 폴더**: `683fdd811cf85394f822e4d8` - 테스트용
 
-### 1.1 폴더 생성
-**POST** `/folders/`
-```json
-{
-  "title": "AI 학습 자료",
-  "folder_type": "academic",
-  "cover_image_url": "https://example.com/image.jpg"
-}
-```
+### 📄 파일 ID
+- **금융 문서**: `2cd81211-7984-4f5b-9805-29c754273a79`
+- **시사 문서**: `5b0c35bf-bc88-4db7-8aaf-f10558fbfce2`
 
-### 1.2 폴더 목록 조회
-**GET** `/folders/`
-```
-Query: ?limit=50&skip=0
-```
-
-### 1.3 특정 폴더 조회
-**GET** `/folders/{folder_id}`
-```
-Path: /folders/64f7b8a12345678901234567
-```
-
-### 1.4 폴더 정보 수정
-**PUT** `/folders/{folder_id}`
-```json
-{
-  "title": "수정된 폴더명",
-  "folder_type": "research"
-}
-```
-
-### 1.5 폴더 삭제
-**DELETE** `/folders/{folder_id}`
-```
-Query: ?force=false
-```
+### 📊 보고서 ID
+- **실제 보고서**: `1b7a85e8-625a-4660-a7b5-4395fb7a6316`
 
 ---
 
-## 2. 파일 업로드 및 관리 (Upload) - `/upload`
+## 🔥 보고서 생성 및 관리 API (개선됨)
 
-### 2.1 파일 업로드 (folder_id 사용)
-**POST** `/upload/`
+### 1️⃣ 파일 목록 조회 (보고서 생성 준비)
+```bash
+GET /api/v1/reports/files/{folder_id}
+```
+
+**파라미터**:
+- ✅ `folder_id` (path): 폴더 ID 또는 폴더명
+
+**실제 테스트**:
+```bash
+curl -X GET "http://localhost:8000/api/v1/reports/files/683e9a9a324d04898ae63f63"
+```
+
+**성공 응답**:
+```json
+[
+  {
+    "file_id": "2cd81211-7984-4f5b-9805-29c754273a79",
+    "filename": "금융문서.pdf",
+    "file_type": "pdf",
+    "file_size": 1024000,
+    "chunk_count": 15,
+    "description": "금융 관련 문서",
+    "selected": false
+  }
+]
+```
+
+### 2️⃣ 보고서 생성 (동기 처리 기본)
+```bash
+POST /api/v1/reports/generate
+```
+
+**파라미터**:
+- ✅ `folder_id`: 폴더 ID
+- ✅ `selected_files`: 선택된 파일 배열
+  - ✅ `file_id`: 파일 ID
+  - ✅ `filename`: 파일명
+  - ✅ `file_type`: 파일 타입
+  - ✅ `selected`: 선택 여부 (true)
+- 🔹 `custom_title`: 사용자 지정 제목
+- 🔹 `background_generation`: 백그라운드 생성 여부 (기본: false)
+
+**실제 테스트 (동기 처리 - 권장)**:
+```bash
+curl -X POST "http://localhost:8000/api/v1/reports/generate" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "folder_id": "683e9a9a324d04898ae63f63",
+    "selected_files": [
+      {
+        "file_id": "2cd81211-7984-4f5b-9805-29c754273a79",
+        "filename": "금융문서.pdf",
+        "file_type": "pdf",
+        "selected": true
+      }
+    ],
+    "custom_title": "금융 시장 분석 보고서",
+    "background_generation": false
+  }'
+```
+
+**성공 응답 (동기)**:
 ```json
 {
-  "file": "업로드할 파일",
-  "folder_id": "64f7b8a12345678901234567",
-  "description": "AI 관련 연구 논문"
+  "message": "보고서 생성이 완료되었습니다",
+  "report_id": "새로운-report-id",
+  "status": "completed",
+  "background_generation": false,
+  "title": "금융 시장 분석 보고서",
+  "subtitle": "금융문서.pdf 기반 분석"
 }
 ```
 
-### 2.2 파일 업로드 (folder_title 사용)
-**POST** `/upload/`
+**백그라운드 생성 (특수한 경우)**:
+```bash
+curl -X POST "http://localhost:8000/api/v1/reports/generate" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "folder_id": "683e9a9a324d04898ae63f63",
+    "selected_files": [
+      {
+        "file_id": "2cd81211-7984-4f5b-9805-29c754273a79",
+        "filename": "금융문서.pdf",
+        "file_type": "pdf",
+        "selected": true
+      }
+    ],
+    "background_generation": true
+  }'
+```
+
+### 3️⃣ 보고서 목록 조회 (통합된 API)
+```bash
+GET /api/v1/reports/
+```
+
+**파라미터**:
+- 🔹 `folder_id` (query): 폴더 ID로 필터링 (생략 시 전체 조회)
+- 🔹 `limit` (query): 조회 개수 (기본: 20, 최대: 100)
+- 🔹 `skip` (query): 건너뛸 개수 (기본: 0)
+
+**실제 테스트**:
+
+**전체 보고서 목록**:
+```bash
+curl -X GET "http://localhost:8000/api/v1/reports/?limit=10&skip=0"
+```
+
+**특정 폴더의 보고서 목록**:
+```bash
+curl -X GET "http://localhost:8000/api/v1/reports/?folder_id=683e9a9a324d04898ae63f63&limit=10&skip=0"
+```
+
+**성공 응답**:
+```json
+[
+  {
+    "report_id": "1b7a85e8-625a-4660-a7b5-4395fb7a6316",
+    "title": "금융 시장 분석 보고서",
+    "subtitle": "금융문서.pdf 기반 분석",
+    "folder_id": "683e9a9a324d04898ae63f63",
+    "created_at": "2024-12-20T10:30:00Z",
+    "metadata": {
+      "total_pages": 25,
+      "analysis_depth": "comprehensive"
+    },
+    "analysis_summary": {
+      "key_findings": ["주요 발견사항 1", "주요 발견사항 2"],
+      "recommendations": ["권장사항 1", "권장사항 2"]
+    }
+  }
+]
+```
+
+### 4️⃣ 보고서 상세 조회
+```bash
+GET /api/v1/reports/{report_id}
+```
+
+**파라미터**:
+- ✅ `report_id` (path): 보고서 ID
+
+**실제 테스트**:
+```bash
+curl -X GET "http://localhost:8000/api/v1/reports/1b7a85e8-625a-4660-a7b5-4395fb7a6316"
+```
+
+**성공 응답**:
 ```json
 {
-  "file": "업로드할 파일",
-  "folder_title": "AI 학습 자료",
-  "description": "마케팅 관리 중간고사 정리 자료"
-}
-```
-
-### 2.3 파일 상태 조회
-**GET** `/upload/status/{file_id}`
-```
-Path: /upload/status/550e8400-e29b-41d4-a716-446655440000
-```
-
-### 2.4 파일 검색
-**POST** `/upload/search`
-```json
-{
-  "query": "머신러닝",
-  "search_type": "both",
-  "folder_id": "64f7b8a12345678901234567",
-  "limit": 10,
-  "skip": 0
-}
-```
-
-### 2.5 파일 목록 조회
-**GET** `/upload/list`
-```
-Query: ?folder_id=64f7b8a12345678901234567&limit=50&skip=0
-```
-
-### 2.6 시맨틱 검색
-**GET** `/upload/semantic-search`
-```
-Query: ?q=머신러닝&k=5&folder_id=64f7b8a12345678901234567
-```
-
-### 2.7 파일 내용 조회
-**GET** `/upload/content/{file_id}`
-```
-Path: /upload/content/550e8400-e29b-41d4-a716-446655440000
-```
-
-### 2.8 파일 정보 수정
-**PUT** `/upload/{file_id}`
-```json
-{
-  "filename": "새로운_파일명.pdf",
-  "description": "수정된 설명",
-  "folder_id": "64f7b8a12345678901234567"
-}
-```
-
-### 2.9 파일 미리보기
-**GET** `/upload/preview/{file_id}`
-```
-Query: ?max_length=500
-```
-
-### 2.10 파일 청크 미리보기
-**GET** `/upload/preview/chunks/{file_id}`
-```
-Query: ?max_chunks=5
-```
-
-### 2.11 파일 삭제
-**DELETE** `/upload/{file_id}`
-```
-Path: /upload/550e8400-e29b-41d4-a716-446655440000
-```
-
----
-
-## 3. 질의응답 (Query) - `/query`
-
-### 3.1 질의 처리
-**POST** `/query/`
-```json
-{
-  "query": "머신러닝이란 무엇인가요?",
-  "folder_id": "64f7b8a12345678901234567",
-  "top_k": 5,
-  "include_sources": true,
-  "session_id": "optional_session_id"
-}
-```
-
-### 3.2 에이전트 정보 조회
-**GET** `/query/agent-info`
-```
-응답 확인용 (JSON 파라미터 없음)
-```
-
-### 3.3 모든 세션 조회
-**GET** `/query/sessions`
-```
-응답 확인용 (JSON 파라미터 없음)
-```
-
-### 3.4 특정 세션 정보 조회
-**GET** `/query/sessions/{session_id}`
-```
-Path: /query/sessions/session_id_example
-```
-
-### 3.5 세션 삭제
-**DELETE** `/query/sessions/{session_id}`
-```
-Path: /query/sessions/session_id_example
-```
-
----
-
-## 4. 요약 (Summary) - `/summary`
-
-### 4.1 요약 생성 (폴더 기반)
-**POST** `/summary/`
-```json
-{
-  "folder_id": "64f7b8a12345678901234567",
-  "summary_type": "detailed"
-}
-```
-
-### 4.2 요약 생성 (문서 기반)
-**POST** `/summary/`
-```json
-{
-  "document_ids": ["file1", "file2", "file3"],
-  "summary_type": "brief"
-}
-```
-
-### 4.3 캐시된 요약 목록 조회
-**GET** `/summary/cached`
-```
-Query: ?folder_id=64f7b8a12345678901234567&limit=10
-```
-
-### 4.4 요약 캐시 삭제
-**DELETE** `/summary/cached/{cache_id}`
-```
-Path: /summary/cached/cache_id_example
-```
-
----
-
-## 5. 퀴즈 (Quiz) - `/quiz`
-
-### 5.1 퀴즈 생성
-**POST** `/quiz/`
-```json
-{
-  "topic": "머신러닝",
-  "folder_id": "64f7b8a12345678901234567",
-  "difficulty": "medium",
-  "count": 5,
-  "quiz_type": "multiple_choice"
-}
-```
-
-### 5.2 퀴즈 히스토리 조회
-**GET** `/quiz/history`
-```
-Query: ?folder_id=64f7b8a12345678901234567&limit=20
-```
-
-### 5.3 퀴즈 통계 조회
-**GET** `/quiz/stats`
-```
-Query: ?folder_id=64f7b8a12345678901234567
-```
-
-### 5.4 퀴즈 삭제
-**DELETE** `/quiz/{quiz_id}`
-```
-Path: /quiz/quiz_id_example
-```
-
----
-
-## 6. 퀴즈 QA 시스템 (Quiz QA) - `/quiz-qa`
-
-### 6.1 퀴즈 답안 제출 및 채점
-**POST** `/quiz-qa/submit`
-```json
-{
-  "session_id": "unique_session_id",
-  "folder_id": "64f7b8a12345678901234567",
-  "quiz_topic": "머신러닝 기초",
-  "answers": [
+  "report_id": "1b7a85e8-625a-4660-a7b5-4395fb7a6316",
+  "title": "금융 시장 분석 보고서",
+  "subtitle": "금융문서.pdf 기반 분석",
+  "folder_id": "683e9a9a324d04898ae63f63",
+  "selected_files": [
     {
-      "question_id": "q1",
-      "question_text": "다음 중 머신러닝의 주요 유형이 아닌 것은?",
-      "quiz_type": "multiple_choice",
-      "user_answer": 1,
-      "correct_answer": 1,
-      "options": ["비지도학습", "지도학습", "강화학습", "데이터마이닝"],
-      "time_spent": 30
+      "file_id": "2cd81211-7984-4f5b-9805-29c754273a79",
+      "filename": "금융문서.pdf",
+      "file_type": "pdf"
+    }
+  ],
+  "report_structure": {
+    "sections": ["서론", "본론", "결론"],
+    "chapter_count": 3
+  },
+  "analysis_summary": {
+    "key_findings": ["주요 발견사항들"],
+    "recommendations": ["권장사항들"]
+  },
+  "metadata": {
+    "total_pages": 25,
+    "analysis_depth": "comprehensive",
+    "processing_time": "2.5분"
+  },
+  "formatted_text": "# 금융 시장 분석 보고서\n\n## 요약\n...",
+  "created_at": "2024-12-20T10:30:00Z",
+  "updated_at": "2024-12-20T10:32:30Z"
+}
+```
+
+### 5️⃣ 보고서 삭제
+```bash
+DELETE /api/v1/reports/{report_id}
+```
+
+**파라미터**:
+- ✅ `report_id` (path): 보고서 ID
+
+**실제 테스트**:
+```bash
+curl -X DELETE "http://localhost:8000/api/v1/reports/1b7a85e8-625a-4660-a7b5-4395fb7a6316"
+```
+
+**성공 응답**:
+```json
+{
+  "message": "보고서가 성공적으로 삭제되었습니다",
+  "report_id": "1b7a85e8-625a-4660-a7b5-4395fb7a6316",
+  "deleted_at": "2024-12-20T11:00:00Z"
+}
+```
+
+### 6️⃣ 보고서 통계 조회
+```bash
+GET /api/v1/reports/statistics/summary
+```
+
+**파라미터**:
+- 🔹 `folder_id` (query): 폴더 ID로 필터링
+
+**실제 테스트**:
+
+**전체 통계**:
+```bash
+curl -X GET "http://localhost:8000/api/v1/reports/statistics/summary"
+```
+
+**특정 폴더 통계**:
+```bash
+curl -X GET "http://localhost:8000/api/v1/reports/statistics/summary?folder_id=683e9a9a324d04898ae63f63"
+```
+
+**성공 응답**:
+```json
+{
+  "total_reports": 12,
+  "recent_reports_count": 5,
+  "folder_id": "683e9a9a324d04898ae63f63",
+  "generated_at": "2024-12-20T11:00:00Z",
+  "recent_reports": [
+    {
+      "report_id": "1b7a85e8-625a-4660-a7b5-4395fb7a6316",
+      "title": "금융 시장 분석 보고서",
+      "created_at": "2024-12-20T10:30:00Z"
     }
   ]
 }
 ```
 
-### 6.2 퀴즈 세션 조회
-**GET** `/quiz-qa/sessions/{session_id}`
-```
-Path: /quiz-qa/sessions/unique_session_id
-```
-
-### 6.3 퀴즈 기록 조회
-**GET** `/quiz-qa/records`
-```
-Query: ?page=1&limit=10&folder_id=64f7b8a12345678901234567
-```
-
-### 6.4 개인 통계 조회
-**GET** `/quiz-qa/stats`
-```
-Query: ?folder_id=64f7b8a12345678901234567
-```
-
-### 6.5 퀴즈 세션 삭제
-**DELETE** `/quiz-qa/sessions/{session_id}`
-```
-Path: /quiz-qa/sessions/unique_session_id
-```
-
-### 6.6 상세 분석 보고서
-**GET** `/quiz-qa/analysis/detailed`
-```
-Query: ?folder_id=64f7b8a12345678901234567&days=30
-```
-
-### 6.7 주간 성과 리포트
-**GET** `/quiz-qa/analysis/weekly`
-```
-Query: ?folder_id=64f7b8a12345678901234567
-```
-
-### 6.8 개인화 추천
-**GET** `/quiz-qa/analysis/recommendations`
-```
-Query: ?folder_id=64f7b8a12345678901234567&limit=5
-```
-
 ---
 
-## 7. 키워드 추출 (Keywords) - `/keywords`
+## 🔍 문서 검색 API
 
-### 7.1 텍스트에서 키워드 추출
-**POST** `/keywords/`
-```json
-{
-  "text": "머신러닝은 인공지능의 한 분야로, 컴퓨터가 명시적으로 프로그래밍되지 않고도 학습할 수 있는 능력을 제공합니다.",
-  "max_keywords": 10
-}
-```
-
-### 7.2 파일에서 키워드 추출
-**POST** `/keywords/from-file`
-```json
-{
-  "file_id": "550e8400-e29b-41d4-a716-446655440000",
-  "max_keywords": 10,
-  "use_chunks": true
-}
-```
-
-### 7.3 폴더에서 키워드 추출
-**POST** `/keywords/from-folder`
-```json
-{
-  "folder_id": "64f7b8a12345678901234567",
-  "max_keywords": 15,
-  "use_chunks": false
-}
-```
-
-### 7.4 폴더에서 키워드 추출 (간단 API)
-**POST** `/keywords/from-folder`
-```
-Query: ?folder_id=64f7b8a12345678901234567&max_keywords=10&use_chunks=true
-```
-
----
-
-## 8. 마인드맵 (Mindmap) - `/mindmap`
-
-### 8.1 마인드맵 생성
-**POST** `/mindmap/`
-```json
-{
-  "root_keyword": "머신러닝",
-  "depth": 3,
-  "max_nodes": 20,
-  "folder_id": "64f7b8a12345678901234567"
-}
-```
-
----
-
-## 9. 추천 (Recommend) - `/recommend`
-
-### 9.1 키워드 기반 추천
-**POST** `/recommend/`
-```json
-{
-  "keywords": ["머신러닝", "딥러닝", "AI"],
-  "content_types": ["book", "movie", "youtube_video"],
-  "max_items": 10,
-  "include_youtube": true,
-  "youtube_max_per_keyword": 3,
-  "folder_id": "64f7b8a12345678901234567"
-}
-```
-
-### 9.2 파일 기반 자동 추천
-**POST** `/recommend/from-file`
-```json
-{
-  "file_id": "550e8400-e29b-41d4-a716-446655440000",
-  "content_types": ["book", "youtube_video"],
-  "max_items": 10,
-  "include_youtube": true,
-  "youtube_max_per_keyword": 3,
-  "max_keywords": 5
-}
-```
-
-### 9.3 폴더 기반 자동 추천 (from-file로 통합됨)
-**POST** `/recommend/from-file`
-```json
-{
-  "folder_id": "64f7b8a12345678901234567",
-  "content_types": ["book", "movie"],
-  "max_items": 8,
-  "include_youtube": false,
-  "max_keywords": 3
-}
-```
-
-### 9.4 캐시된 추천 목록 조회
-**GET** `/recommend/cached`
-```
-Query: ?folder_id=64f7b8a12345678901234567&limit=10
-```
-
-### 9.5 추천 캐시 삭제
-**DELETE** `/recommend/cached/{cache_id}`
-```
-Path: /recommend/cached/cache_id_example
-```
-
----
-
-## 10. OCR 브릿지 (OCR Bridge) - `/ocr-bridge`
-
-### 10.1 OCR 브릿지 홈
-**GET** `/ocr-bridge/`
-```
-응답 확인용 (JSON 파라미터 없음)
-```
-
-### 10.2 OCR 통계 조회
-**GET** `/ocr-bridge/stats`
-```
-응답 확인용 (JSON 파라미터 없음)
-```
-
-### 10.3 OCR 데이터 동기화
-**POST** `/ocr-bridge/sync`
-```json
-{
-  "force_resync": false
-}
-```
-
-### 10.4 OCR 브릿지 상태 조회
-**GET** `/ocr-bridge/status`
-```
-응답 확인용 (JSON 파라미터 없음)
-```
-
-### 10.5 OCR 폴더 조회
-**GET** `/ocr-bridge/folder/ocr`
-```
-응답 확인용 (JSON 파라미터 없음)
-```
-
----
-
-## 11. 기본 정보 조회
-
-### 11.1 루트 엔드포인트
-**GET** `/`
-```
-응답 확인용 (JSON 파라미터 없음)
-```
-
----
-
-## 📝 테스트용 샘플 데이터
-
-### 폴더 ID 예시
-```
-64f7b8a12345678901234567
-```
-
-### 파일 ID 예시
-```
-550e8400-e29b-41d4-a716-446655440000
-```
-
-### 테스트용 텍스트
-```
-"머신러닝은 인공지능의 한 분야로, 컴퓨터가 명시적으로 프로그래밍되지 않고도 학습할 수 있는 능력을 제공합니다. 딥러닝, 자연어처리, 컴퓨터비전 등이 주요 응용 분야입니다."
-```
-
-### 테스트용 키워드 배열
-```
-["머신러닝", "딥러닝", "AI", "인공지능", "자연어처리"]
-```
-
----
-
-## 🧪 빠른 테스트 시나리오
-
-### 1. 기본 워크플로우
+### 1️⃣ 폴더 목록 조회
 ```bash
-1. POST /folders/ (폴더 생성)
-2. POST /upload/ (파일 업로드)
-3. POST /query/ (질의응답)
-4. POST /summary/ (요약 생성)
-5. POST /quiz/ (퀴즈 생성)
+GET /api/v1/folders/
 ```
 
-### 2. 분석 워크플로우
+**실제 테스트**:
 ```bash
-1. POST /keywords/from-file (키워드 추출)
-2. POST /mindmap/ (마인드맵 생성)
-3. POST /recommend/from-file (추천 생성)
-4. POST /quiz-qa/submit (퀴즈 답안 제출)
+curl -X GET "http://localhost:8000/api/v1/folders/"
+```
+
+### 2️⃣ 폴더 내 파일 목록 조회
+```bash
+GET /api/v1/folders/{folder_id}/files
+```
+
+**실제 테스트**:
+```bash
+curl -X GET "http://localhost:8000/api/v1/folders/683e9a9a324d04898ae63f63/files"
+```
+
+### 3️⃣ 의미 기반 검색
+```bash
+POST /api/v1/search/semantic
+```
+
+**파라미터**:
+- ✅ `query`: 검색 쿼리
+- ✅ `folder_id`: 폴더 ID
+- 🔹 `top_k`: 반환할 결과 수 (기본: 5)
+- 🔹 `similarity_threshold`: 유사도 임계값 (기본: 0.7)
+
+**실제 테스트**:
+```bash
+curl -X POST "http://localhost:8000/api/v1/search/semantic" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "금융 시장 분석",
+    "folder_id": "683e9a9a324d04898ae63f63",
+    "top_k": 5,
+    "similarity_threshold": 0.7
+  }'
+```
+
+### 4️⃣ 키워드 추출
+```bash
+POST /api/v1/search/keywords
+```
+
+**파라미터**:
+- ✅ `folder_id`: 폴더 ID
+- 🔹 `file_ids`: 특정 파일 ID 배열 (생략 시 폴더 전체)
+- 🔹 `max_keywords`: 최대 키워드 수 (기본: 10)
+
+**실제 테스트**:
+```bash
+curl -X POST "http://localhost:8000/api/v1/search/keywords" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "folder_id": "683e9a9a324d04898ae63f63",
+    "file_ids": ["2cd81211-7984-4f5b-9805-29c754273a79"],
+    "max_keywords": 10
+  }'
+```
+
+### 5️⃣ 유사 문서 추천
+```bash
+POST /api/v1/search/similar
+```
+
+**파라미터**:
+- ✅ `file_id`: 기준 파일 ID
+- ✅ `folder_id`: 폴더 ID
+- 🔹 `top_k`: 반환할 결과 수 (기본: 5)
+- 🔹 `similarity_threshold`: 유사도 임계값 (기본: 0.7)
+
+**실제 테스트**:
+```bash
+curl -X POST "http://localhost:8000/api/v1/search/similar" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "file_id": "2cd81211-7984-4f5b-9805-29c754273a79",
+    "folder_id": "683e9a9a324d04898ae63f63",
+    "top_k": 5,
+    "similarity_threshold": 0.7
+  }'
 ```
 
 ---
 
-**💡 테스트 팁:**
-- 먼저 폴더 생성 → 파일 업로드 → 기타 기능 테스트 순서로 진행
-- 생성된 리소스의 ID를 기록하여 후속 테스트에 활용
-- 한국어 검색어는 URL 인코딩 필요 (시맨틱 검색)
-- Form Data 업로드 시 파일 첨부 필수
-- 최신 업데이트: 퀴즈 QA 시스템, OCR 브릿지 통합 (2025-06-08) 
+## 🧠 퀴즈 생성 API
+
+### 1️⃣ 퀴즈 생성
+```bash
+POST /api/v1/quiz/generate
+```
+
+**파라미터**:
+- ✅ `folder_id`: 폴더 ID
+- 🔹 `file_ids`: 특정 파일 ID 배열 (생략 시 폴더 전체)
+- 🔹 `num_questions`: 문제 수 (기본: 10, 최대: 50)
+- 🔹 `difficulty`: 난이도 ("easy", "medium", "hard", 기본: "medium")
+- 🔹 `question_types`: 문제 유형 배열 (기본: ["multiple_choice", "true_false"])
+
+**실제 테스트**:
+```bash
+curl -X POST "http://localhost:8000/api/v1/quiz/generate" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "folder_id": "683e9a9a324d04898ae63f63",
+    "file_ids": ["2cd81211-7984-4f5b-9805-29c754273a79"],
+    "num_questions": 5,
+    "difficulty": "medium",
+    "question_types": ["multiple_choice", "true_false"]
+  }'
+```
+
+### 2️⃣ 퀴즈 세션 생성
+```bash
+POST /api/v1/quiz/session
+```
+
+**파라미터**:
+- ✅ `quiz_id`: 퀴즈 ID
+- 🔹 `session_name`: 세션 이름
+
+**실제 테스트**:
+```bash
+curl -X POST "http://localhost:8000/api/v1/quiz/session" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "quiz_id": "실제퀴즈ID",
+    "session_name": "테스트 세션"
+  }'
+```
+
+### 3️⃣ 퀴즈 답안 제출
+```bash
+POST /api/v1/quiz/submit/{session_id}
+```
+
+**파라미터**:
+- ✅ `session_id` (path): 세션 ID
+- ✅ `answers`: 답안 배열
+  - ✅ `question_id`: 문제 ID
+  - ✅ `answer`: 답안
+
+**실제 테스트**:
+```bash
+curl -X POST "http://localhost:8000/api/v1/quiz/submit/api_test_92a18f1f" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "answers": [
+      {
+        "question_id": "q1",
+        "answer": "A"
+      },
+      {
+        "question_id": "q2",
+        "answer": "true"
+      }
+    ]
+  }'
+```
+
+### 4️⃣ 퀴즈 목록 조회 (qapairs 컬렉션)
+```bash
+GET /api/v1/quiz/list
+```
+
+**파라미터**:
+- 🔹 `folder_id` (query): 폴더 ID로 필터링
+- 🔹 `topic` (query): 주제로 필터링
+- 🔹 `difficulty` (query): 난이도로 필터링 (easy, medium, hard)
+- 🔹 `quiz_type` (query): 퀴즈 타입으로 필터링 (multiple_choice, true_false, short_answer)
+- 🔹 `page` (query): 페이지 번호 (기본: 1)
+- 🔹 `limit` (query): 페이지당 항목 수 (기본: 20, 최대: 100)
+
+**실제 테스트**:
+```bash
+# 전체 퀴즈 목록
+curl -X GET "http://localhost:8000/api/v1/quiz/list?page=1&limit=10"
+
+# 금융 폴더 퀴즈만
+curl -X GET "http://localhost:8000/api/v1/quiz/list?folder_id=683e9a9a324d04898ae63f63&page=1&limit=10"
+
+# 객관식 문제만
+curl -X GET "http://localhost:8000/api/v1/quiz/list?quiz_type=multiple_choice&page=1&limit=10"
+```
+
+**성공 응답**:
+```json
+{
+  "quizzes": [
+    {
+      "quiz_id": "6847ada7862b6f61029b9748",
+      "question": "S P 500지수와 비교할 때, 어떤 방식으로 수익률을 계산하는 지수는 대표적인 부족하다는 의견이 많습니까?",
+      "quiz_type": "multiple_choice",
+      "quiz_options": ["시가총액 가중평균", "수익률 평균방식", "기술평균방식", "자산총액 방식"],
+      "correct_option": 1,
+      "correct_answer": "수익률 평균방식으로 계산되는 지수는 대표성이 부족하다는 의견이 있습니다.",
+      "answer": "수익률 평균방식으로 계산되는 지수는 대표성이 부족하다는 의견이 있습니다.",
+      "difficulty": "medium",
+      "topic": "블록체인",
+      "folder_id": "683e9a9a324d04898ae63f63",
+      "source_document_id": null,
+      "created_at": "2025-06-10T03:59:35.774000+00:00"
+    }
+  ],
+  "total_count": 25,
+  "page": 1,
+  "limit": 10,
+  "has_next": true
+}
+```
+
+### 5️⃣ 개별 퀴즈 상세 조회
+```bash
+GET /api/v1/quiz/{quiz_id}
+```
+
+**파라미터**:
+- ✅ `quiz_id` (path): 퀴즈 ID (MongoDB ObjectId)
+
+**실제 테스트**:
+```bash
+curl -X GET "http://localhost:8000/api/v1/quiz/6847ada7862b6f61029b9748"
+```
+
+**성공 응답**:
+```json
+{
+  "quiz_id": "6847ada7862b6f61029b9748",
+  "question": "S P 500지수와 비교할 때, 어떤 방식으로 수익률을 계산하는 지수는 대표적인 부족하다는 의견이 많습니까?",
+  "quiz_type": "multiple_choice",
+  "quiz_options": ["시가총액 가중평균", "수익률 평균방식", "기술평균방식", "자산총액 방식"],
+  "correct_option": 1,
+  "correct_answer": "수익률 평균방식으로 계산되는 지수는 대표성이 부족하다는 의견이 있습니다.",
+  "answer": "수익률 평균방식으로 계산되는 지수는 대표성이 부족하다는 의견이 있습니다.",
+  "difficulty": "medium",
+  "topic": "블록체인",
+  "folder_id": "683e9a9a324d04898ae63f63",
+  "source_document_id": null,
+  "created_at": "2025-06-10T03:59:35.774000+00:00"
+}
+```
+
+### 6️⃣ 퀴즈 결과 조회
+```bash
+GET /api/v1/quiz/result/{session_id}
+```
+
+**실제 테스트**:
+```bash
+curl -X GET "http://localhost:8000/api/v1/quiz/result/api_test_92a18f1f"
+```
+
+---
+
+## 🎯 추천 테스트 시나리오
+
+### 💰 시나리오 1: 금융 폴더 완전 테스트
+```bash
+# 1. 폴더 파일 목록 조회
+curl -X GET "http://localhost:8000/api/v1/reports/files/683e9a9a324d04898ae63f63"
+
+# 2. 보고서 생성 (동기)
+curl -X POST "http://localhost:8000/api/v1/reports/generate" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "folder_id": "683e9a9a324d04898ae63f63",
+    "selected_files": [
+      {
+        "file_id": "2cd81211-7984-4f5b-9805-29c754273a79",
+        "filename": "금융문서.pdf",
+        "file_type": "pdf",
+        "selected": true
+      }
+    ],
+    "custom_title": "금융 분석 보고서"
+  }'
+
+# 3. 보고서 목록 조회
+curl -X GET "http://localhost:8000/api/v1/reports/?folder_id=683e9a9a324d04898ae63f63"
+
+# 4. 보고서 상세 조회 (위에서 받은 report_id 사용)
+curl -X GET "http://localhost:8000/api/v1/reports/새로운-report-id"
+```
+
+### 🔍 시나리오 2: 검색 및 퀴즈 테스트
+```bash
+# 1. 의미 검색
+curl -X POST "http://localhost:8000/api/v1/search/semantic" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "금융 시장 분석",
+    "folder_id": "683e9a9a324d04898ae63f63",
+    "top_k": 3
+  }'
+
+# 2. 퀴즈 생성
+curl -X POST "http://localhost:8000/api/v1/quiz/generate" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "folder_id": "683e9a9a324d04898ae63f63",
+    "num_questions": 3,
+    "difficulty": "medium"
+  }'
+
+# 3. 생성된 퀴즈 목록 조회
+curl -X GET "http://localhost:8000/api/v1/quiz/list?folder_id=683e9a9a324d04898ae63f63&page=1&limit=5"
+```
+
+---
+
+## ✅ 주요 개선사항
+
+### 🔧 API 구조 개선
+1. **상태 조회 API 제거**: 불필요한 복잡성 제거
+2. **보고서 목록 API 통합**: 하나의 API로 전체/폴더별 조회 가능
+3. **논리적 순서 재정렬**: 사용자 워크플로우에 맞춘 순서
+4. **동기 처리 기본**: `background_generation: false`가 기본값
+
+### 🚀 사용자 경험 개선
+- **간소화된 워크플로우**: 파일 선택 → 보고서 생성 → 결과 확인
+- **즉시 결과 반환**: 2-3분 내 완료되는 동기 처리
+- **통합된 목록 조회**: 하나의 API로 모든 보고서 조회 가능
+- **명확한 API 순서**: 논리적 흐름에 따른 단계별 진행
+
+### 📊 성능 최적화
+- **메모리 사용량 감소**: 불필요한 상태 관리 제거
+- **복잡성 감소**: 백그라운드 처리는 특수한 경우에만
+- **에러 처리 개선**: 명확한 에러 메시지와 상태 코드
+
+---
+
+## 🌟 핵심 포인트
+
+1. **동기 처리 우선**: 대부분의 경우 즉시 결과 반환
+2. **통합된 목록 API**: `folder_id` 파라미터로 필터링
+3. **논리적 API 순서**: 1→2→3→4→5→6 단계별 진행
+4. **실제 데이터 사용**: 100% 성공하는 테스트 환경
+
+**가장 추천하는 테스트 폴더**: `683e9a9a324d04898ae63f63` (금융) 

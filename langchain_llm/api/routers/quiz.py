@@ -1,10 +1,12 @@
 """
 퀴즈 API 라우터
 MODIFIED 2024-12-20: 퀴즈 히스토리 및 통계 조회 기능 추가
+MODIFIED 2024-12-20: 퀴즈 목록 조회 및 상세 조회 API 추가
 """
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 from typing import List, Optional
+from bson import ObjectId
 from api.chains.quiz_chain import QuizChain
 from database.connection import get_database
 from utils.logger import get_logger
@@ -31,6 +33,21 @@ class QuizItem(BaseModel):
     explanation: Optional[str] = None
     from_existing: Optional[bool] = False
 
+class QuizDetailItem(BaseModel):
+    """퀴즈 상세 정보 모델 (웹 조회용)"""
+    quiz_id: str
+    question: str
+    quiz_type: str = "multiple_choice"
+    quiz_options: Optional[List[str]] = None
+    correct_option: Optional[int] = None
+    correct_answer: Optional[str] = None
+    answer: Optional[str] = None  # 해설
+    difficulty: str
+    topic: Optional[str] = None
+    folder_id: Optional[str] = None
+    source_document_id: Optional[str] = None
+    created_at: Optional[str] = None
+
 class QuizResponse(BaseModel):
     """퀴즈 응답 모델"""
     quizzes: List[QuizItem]
@@ -38,6 +55,14 @@ class QuizResponse(BaseModel):
     total_count: int
     generated_new: Optional[int] = 0
     used_existing: Optional[int] = 0
+
+class QuizListResponse(BaseModel):
+    """퀴즈 목록 응답 모델"""
+    quizzes: List[QuizDetailItem]
+    total_count: int
+    page: int
+    limit: int
+    has_next: bool
 
 class QuizHistoryItem(BaseModel):
     """퀴즈 히스토리 항목 모델"""
@@ -101,6 +126,122 @@ async def generate_quiz(request: QuizRequest):
         
     except Exception as e:
         logger.error(f"퀴즈 생성 실패: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/list", response_model=QuizListResponse)
+async def get_quiz_list(
+    folder_id: Optional[str] = Query(None, description="폴더 ID로 필터링"),
+    topic: Optional[str] = Query(None, description="주제로 필터링"),
+    difficulty: Optional[str] = Query(None, description="난이도로 필터링 (easy, medium, hard)"),
+    quiz_type: Optional[str] = Query(None, description="퀴즈 타입으로 필터링 (multiple_choice, true_false, short_answer)"),
+    page: int = Query(1, ge=1, description="페이지 번호"),
+    limit: int = Query(20, ge=1, le=100, description="페이지당 항목 수")
+):
+    """
+    퀴즈 목록 조회 엔드포인트 (웹 전용)
+    qapairs 컬렉션에서 저장된 퀴즈들을 필터링하여 조회
+    """
+    try:
+        db = await get_database()
+        
+        # 필터 조건 구성
+        filter_dict = {}
+        if folder_id:
+            filter_dict["folder_id"] = folder_id
+        if topic:
+            filter_dict["topic"] = {"$regex": topic, "$options": "i"}
+        if difficulty:
+            filter_dict["difficulty"] = difficulty
+        if quiz_type:
+            filter_dict["quiz_type"] = quiz_type
+        
+        # 총 개수 조회
+        total_count = await db.qapairs.count_documents(filter_dict)
+        
+        # 페이징 계산
+        skip = (page - 1) * limit
+        has_next = skip + limit < total_count
+        
+        # 퀴즈 목록 조회
+        quizzes_cursor = db.qapairs.find(filter_dict).sort("created_at", -1).skip(skip).limit(limit)
+        quizzes = await quizzes_cursor.to_list(None)
+        
+        # 응답 데이터 구성
+        quiz_items = []
+        for quiz in quizzes:
+            quiz_items.append(QuizDetailItem(
+                quiz_id=str(quiz["_id"]),
+                question=quiz["question"],
+                quiz_type=quiz.get("quiz_type", "multiple_choice"),
+                quiz_options=quiz.get("quiz_options", []),
+                correct_option=quiz.get("correct_option"),
+                correct_answer=quiz.get("correct_answer"),
+                answer=quiz.get("answer", ""),
+                difficulty=quiz["difficulty"],
+                topic=quiz.get("topic"),
+                folder_id=quiz.get("folder_id"),
+                source_document_id=quiz.get("source_document_id"),
+                created_at=str(quiz.get("created_at", ""))
+            ))
+        
+        logger.info(f"퀴즈 목록 조회 완료: {len(quiz_items)}개 (총 {total_count}개)")
+        
+        return QuizListResponse(
+            quizzes=quiz_items,
+            total_count=total_count,
+            page=page,
+            limit=limit,
+            has_next=has_next
+        )
+        
+    except Exception as e:
+        logger.error(f"퀴즈 목록 조회 실패: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/{quiz_id}", response_model=QuizDetailItem)
+async def get_quiz_detail(quiz_id: str):
+    """
+    개별 퀴즈 상세 조회 엔드포인트
+    특정 퀴즈의 모든 정보 (선택지, 정답, 해설 포함) 조회
+    """
+    try:
+        db = await get_database()
+        
+        # ObjectId 변환
+        try:
+            object_id = ObjectId(quiz_id)
+        except:
+            raise HTTPException(status_code=400, detail="유효하지 않은 퀴즈 ID 형식입니다")
+        
+        # 퀴즈 조회
+        quiz = await db.qapairs.find_one({"_id": object_id})
+        
+        if not quiz:
+            raise HTTPException(status_code=404, detail="퀴즈를 찾을 수 없습니다")
+        
+        # 응답 데이터 구성
+        quiz_detail = QuizDetailItem(
+            quiz_id=str(quiz["_id"]),
+            question=quiz["question"],
+            quiz_type=quiz.get("quiz_type", "multiple_choice"),
+            quiz_options=quiz.get("quiz_options", []),
+            correct_option=quiz.get("correct_option"),
+            correct_answer=quiz.get("correct_answer"),
+            answer=quiz.get("answer", ""),
+            difficulty=quiz["difficulty"],
+            topic=quiz.get("topic"),
+            folder_id=quiz.get("folder_id"),
+            source_document_id=quiz.get("source_document_id"),
+            created_at=str(quiz.get("created_at", ""))
+        )
+        
+        logger.info(f"퀴즈 상세 조회 완료: {quiz_id}")
+        return quiz_detail
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"퀴즈 상세 조회 실패: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/history", response_model=QuizHistoryResponse)

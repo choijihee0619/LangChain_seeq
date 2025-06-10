@@ -108,6 +108,14 @@ class DatabaseConnection:
             await self.db.quiz_submissions.create_index("question_order")
             await self.db.quiz_submissions.create_index("created_at")
             
+            # reports 컬렉션 인덱스 (보고서 기능용 - 새로 추가)
+            await self.db.reports.create_index("report_id", unique=True)
+            await self.db.reports.create_index("folder_id")
+            await self.db.reports.create_index("title")
+            await self.db.reports.create_index("created_at")
+            await self.db.reports.create_index("updated_at")
+            await self._create_text_index("reports", "title")
+            
             logger.info("인덱스 생성 완료")
             
         except Exception as e:
@@ -167,3 +175,7 @@ async def get_database() -> AsyncIOMotorDatabase:
     if db_connection.db is None:
         await init_db()
     return db_connection.db
+
+async def get_db() -> AsyncIOMotorDatabase:
+    """get_database의 별칭 (간편 사용용)"""
+    return await get_database()

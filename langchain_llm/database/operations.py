@@ -337,22 +337,287 @@ class DatabaseOperations:
         folder_id: Optional[str],
         labels: Dict
     ) -> str:
-        """문서 자동 라벨링 결과 저장"""
+        """문서 라벨 저장"""
         try:
             label_doc = {
                 "document_id": document_id,
                 "folder_id": folder_id,
-                "tags": labels.get("tags", []),
-                "category": labels.get("category", "기타"),
-                "keywords": labels.get("keywords", []),
-                "confidence_score": labels.get("confidence_score", 0.0),
+                **labels,
                 "created_at": datetime.utcnow()
             }
             
-            label_id = await self.insert_one("labels", label_doc)
-            logger.info(f"문서 라벨링 저장 완료: {document_id}")
-            return label_id
+            # 기존 라벨이 있으면 업데이트, 없으면 생성
+            existing = await self.find_one("labels", {"document_id": document_id})
+            if existing:
+                await self.update_one(
+                    "labels",
+                    {"document_id": document_id},
+                    {"$set": label_doc}
+                )
+                return str(existing["_id"])
+            else:
+                return await self.insert_one("labels", label_doc)
+                
+        except Exception as e:
+            logger.error(f"문서 라벨 저장 실패: {e}")
+            raise
+
+    # === 보고서 관련 메서드들 ===
+    
+    async def save_report(self, report_data: Dict) -> str:
+        """보고서 데이터 저장"""
+        try:
+            report_id = await self.insert_one("reports", report_data)
+            logger.info(f"보고서 저장 완료: {report_data['title']} ({report_id})")
+            return report_id
             
         except Exception as e:
-            logger.error(f"문서 라벨링 저장 실패: {e}")
+            logger.error(f"보고서 저장 실패: {e}")
             raise
+    
+    async def get_report_by_id(self, report_id: str) -> Optional[Dict]:
+        """ID로 보고서 조회"""
+        try:
+            # ObjectId 형태인지 확인
+            if len(report_id) == 24:
+                report = await self.find_one("reports", {"_id": ObjectId(report_id)})
+            else:
+                # report_id 필드로 검색
+                report = await self.find_one("reports", {"report_id": report_id})
+            
+            return report
+            
+        except Exception as e:
+            logger.error(f"보고서 조회 실패: {e}")
+            return None
+    
+    async def get_reports_by_folder(
+        self,
+        folder_id: str,
+        limit: int = 10,
+        skip: int = 0
+    ) -> List[Dict]:
+        """폴더별 보고서 목록 조회"""
+        try:
+            reports = await self.find_many(
+                "reports",
+                {"folder_id": folder_id},
+                limit=limit,
+                skip=skip
+            )
+            
+            # 최신순으로 정렬
+            reports.sort(key=lambda x: x.get("created_at", datetime.min), reverse=True)
+            return reports
+            
+        except Exception as e:
+            logger.error(f"폴더별 보고서 조회 실패: {e}")
+            return []
+    
+    async def get_all_reports(
+        self,
+        limit: int = 20,
+        skip: int = 0
+    ) -> List[Dict]:
+        """전체 보고서 목록 조회 (최신순)"""
+        try:
+            reports = await self.find_many(
+                "reports",
+                {},
+                limit=limit,
+                skip=skip
+            )
+            
+            # 최신순으로 정렬
+            reports.sort(key=lambda x: x.get("created_at", datetime.min), reverse=True)
+            return reports
+            
+        except Exception as e:
+            logger.error(f"전체 보고서 조회 실패: {e}")
+            return []
+    
+    async def delete_report(self, report_id: str) -> bool:
+        """보고서 삭제"""
+        try:
+            # ObjectId 형태인지 확인
+            if len(report_id) == 24:
+                success = await self.delete_one("reports", {"_id": ObjectId(report_id)})
+            else:
+                success = await self.delete_one("reports", {"report_id": report_id})
+            
+            if success:
+                logger.info(f"보고서 삭제 완료: {report_id}")
+            
+            return success
+            
+        except Exception as e:
+            logger.error(f"보고서 삭제 실패: {e}")
+            return False
+    
+    async def update_report(self, report_id: str, update_data: Dict) -> bool:
+        """보고서 수정"""
+        try:
+            # 수정 시간 추가
+            update_data["updated_at"] = datetime.utcnow()
+            
+            # ObjectId 형태인지 확인
+            if len(report_id) == 24:
+                success = await self.update_one(
+                    "reports",
+                    {"_id": ObjectId(report_id)},
+                    {"$set": update_data}
+                )
+            else:
+                success = await self.update_one(
+                    "reports",
+                    {"report_id": report_id},
+                    {"$set": update_data}
+                )
+            
+            if success:
+                logger.info(f"보고서 수정 완료: {report_id}")
+            
+            return success
+            
+        except Exception as e:
+            logger.error(f"보고서 수정 실패: {e}")
+            return False
+    
+    async def get_folder_files_for_report(self, folder_id: str) -> List[Dict]:
+        """보고서 생성용 폴더 내 파일 목록 조회"""
+        try:
+            # documents 컬렉션에서 폴더별 파일 정보 조회
+            documents = await self.find_many("documents", {"folder_id": folder_id})
+            
+            # 파일별로 그룹화하여 고유 파일 목록 생성
+            files_dict = {}
+            for doc in documents:
+                file_metadata = doc.get("file_metadata", {})
+                file_id = file_metadata.get("file_id")
+                
+                if file_id and file_id not in files_dict:
+                    files_dict[file_id] = {
+                        "file_id": file_id,
+                        "filename": file_metadata.get("original_filename", "Unknown"),
+                        "file_type": file_metadata.get("file_type", "unknown"),
+                        "file_size": file_metadata.get("file_size", 0),
+                        "description": file_metadata.get("description", ""),
+                        "chunk_count": 0
+                    }
+                
+                # 청크 수 카운트
+                if file_id in files_dict:
+                    files_dict[file_id]["chunk_count"] += 1
+            
+            # 리스트로 변환하고 파일명 순으로 정렬
+            file_list = list(files_dict.values())
+            file_list.sort(key=lambda x: x["filename"])
+            
+            logger.info(f"폴더 {folder_id}에서 {len(file_list)}개 파일 조회")
+            return file_list
+            
+        except Exception as e:
+            logger.error(f"폴더 파일 목록 조회 실패: {e}")
+            return []
+    
+    async def get_documents_content_by_files(
+        self,
+        folder_id: str,
+        selected_file_ids: List[str]
+    ) -> List[str]:
+        """선택된 파일들의 문서 내용 조회"""
+        try:
+            documents = await self.find_many(
+                "documents",
+                {
+                    "folder_id": folder_id,
+                    "file_metadata.file_id": {"$in": selected_file_ids}
+                }
+            )
+            
+            # 파일별로 그룹화하고 청크 순서대로 정렬
+            files_content = {}
+            for doc in documents:
+                file_id = doc.get("file_metadata", {}).get("file_id")
+                chunk_sequence = doc.get("chunk_sequence", 0)
+                content = doc.get("raw_text", "")
+                
+                if file_id not in files_content:
+                    files_content[file_id] = []
+                
+                files_content[file_id].append((chunk_sequence, content))
+            
+            # 각 파일의 청크들을 순서대로 정렬하고 결합
+            combined_contents = []
+            for file_id in selected_file_ids:
+                if file_id in files_content:
+                    # 청크 순서대로 정렬
+                    chunks = sorted(files_content[file_id], key=lambda x: x[0])
+                    # 내용만 추출하여 결합
+                    file_content = "\n".join([chunk[1] for chunk in chunks])
+                    combined_contents.append(file_content)
+            
+            logger.info(f"선택된 {len(selected_file_ids)}개 파일의 내용 조회 완료")
+            return combined_contents
+            
+        except Exception as e:
+            logger.error(f"문서 내용 조회 실패: {e}")
+            return []
+    
+    async def get_report_statistics(self, folder_id: Optional[str] = None) -> Dict:
+        """보고서 통계 조회"""
+        try:
+            filter_dict = {"folder_id": folder_id} if folder_id else {}
+            reports = await self.find_many("reports", filter_dict)
+            
+            if not reports:
+                return {
+                    "total_reports": 0,
+                    "average_pages": 0,
+                    "average_word_count": 0,
+                    "most_common_topics": [],
+                    "recent_reports": []
+                }
+            
+            # 통계 계산
+            total_reports = len(reports)
+            total_pages = sum(r.get("metadata", {}).get("total_pages", 0) for r in reports)
+            total_words = sum(r.get("metadata", {}).get("word_count", 0) for r in reports)
+            
+            # 주제별 빈도 계산
+            topics = [r.get("analysis_summary", {}).get("main_topic", "기타") for r in reports]
+            topic_counts = {}
+            for topic in topics:
+                topic_counts[topic] = topic_counts.get(topic, 0) + 1
+            
+            most_common_topics = sorted(topic_counts.items(), key=lambda x: x[1], reverse=True)[:5]
+            
+            # 최근 보고서 (5개)
+            recent_reports = sorted(reports, key=lambda x: x.get("created_at", datetime.min), reverse=True)[:5]
+            recent_reports_info = [
+                {
+                    "report_id": r["report_id"],
+                    "title": r["title"],
+                    "created_at": r["created_at"],
+                    "pages": r.get("metadata", {}).get("total_pages", 0)
+                }
+                for r in recent_reports
+            ]
+            
+            return {
+                "total_reports": total_reports,
+                "average_pages": round(total_pages / total_reports, 1) if total_reports > 0 else 0,
+                "average_word_count": round(total_words / total_reports) if total_reports > 0 else 0,
+                "most_common_topics": most_common_topics,
+                "recent_reports": recent_reports_info
+            }
+            
+        except Exception as e:
+            logger.error(f"보고서 통계 조회 실패: {e}")
+            return {
+                "total_reports": 0,
+                "average_pages": 0,
+                "average_word_count": 0,
+                "most_common_topics": [],
+                "recent_reports": []
+            }
