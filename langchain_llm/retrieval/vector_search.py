@@ -43,45 +43,22 @@ class VectorSearch:
             # 쿼리 임베딩
             query_embedding = await self.embedder.embed_text(query)
             
-            # MongoDB 집계 파이프라인으로 필터링된 청크 조회
-            pipeline = []
-            
-            # 필터 적용 (file_id 또는 folder_id 기반)
-            match_stage = {}
+            # 필터 조건 구성
+            match_filter = {}
             if filter_dict:
                 if "folder_id" in filter_dict:
-                    # folder_id로 필터링하는 경우 documents 컬렉션과 조인 필요 (새로운 구조에 맞게 수정)
-                    pipeline.extend([
-                        {
-                            "$lookup": {
-                                "from": "documents",
-                                "localField": "file_id",
-                                "foreignField": "file_metadata.file_id",
-                                "as": "document_info"
-                            }
-                        },
-                        {
-                            "$match": {
-                                "document_info.folder_id": filter_dict["folder_id"]
-                            }
-                        }
-                    ])
+                    # chunks 컬렉션에 직접 folder_id 필드 사용 (OCR Bridge 데이터 포함)
+                    match_filter["folder_id"] = filter_dict["folder_id"]
                 else:
-                    match_stage.update(filter_dict)
-            
-            if match_stage:
-                pipeline.insert(0, {"$match": match_stage})
+                    match_filter.update(filter_dict)
             
             # 청크 조회
             chunks = []
-            if pipeline:
-                cursor = self.chunks_collection.aggregate(pipeline)
-                async for chunk in cursor:
-                    chunks.append(chunk)
-            else:
-                cursor = self.chunks_collection.find({})
-                async for chunk in cursor:
-                    chunks.append(chunk)
+            cursor = self.chunks_collection.find(match_filter)
+            async for chunk in cursor:
+                chunks.append(chunk)
+            
+            logger.info(f"폴더 필터링으로 {len(chunks)}개 청크 조회됨")
             
             # 각 청크에 대해 유사도 계산
             scored_chunks = []

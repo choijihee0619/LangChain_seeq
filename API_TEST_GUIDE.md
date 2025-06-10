@@ -40,7 +40,7 @@ curl -X GET "http://localhost:8000/api/v1/reports/files/683e9a9a324d04898ae63f63
 **성공 응답**:
 ```json
 [
-  {
+{
     "file_id": "2cd81211-7984-4f5b-9805-29c754273a79",
     "filename": "금융문서.pdf",
     "file_type": "pdf",
@@ -48,7 +48,7 @@ curl -X GET "http://localhost:8000/api/v1/reports/files/683e9a9a324d04898ae63f63
     "chunk_count": 15,
     "description": "금융 관련 문서",
     "selected": false
-  }
+}
 ]
 ```
 
@@ -141,7 +141,7 @@ curl -X GET "http://localhost:8000/api/v1/reports/?folder_id=683e9a9a324d04898ae
 **성공 응답**:
 ```json
 [
-  {
+{
     "report_id": "1b7a85e8-625a-4660-a7b5-4395fb7a6316",
     "title": "금융 시장 분석 보고서",
     "subtitle": "금융문서.pdf 기반 분석",
@@ -184,7 +184,7 @@ curl -X GET "http://localhost:8000/api/v1/reports/1b7a85e8-625a-4660-a7b5-4395fb
       "file_id": "2cd81211-7984-4f5b-9805-29c754273a79",
       "filename": "금융문서.pdf",
       "file_type": "pdf"
-    }
+}
   ],
   "report_structure": {
     "sections": ["서론", "본론", "결론"],
@@ -427,7 +427,7 @@ curl -X POST "http://localhost:8000/api/v1/quiz/submit/api_test_92a18f1f" \
       {
         "question_id": "q2",
         "answer": "true"
-      }
+}
     ]
   }'
 ```
