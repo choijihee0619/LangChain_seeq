@@ -17,7 +17,7 @@ router = APIRouter()
 class FolderCreateRequest(BaseModel):
     """폴더 생성 요청 모델"""
     title: str
-    folder_type: str = "general"
+    folder_type: str = "library"
     cover_image_url: Optional[str] = None
 
 class FolderUpdateRequest(BaseModel):
@@ -31,8 +31,8 @@ class FolderResponse(BaseModel):
     folder_id: str  # ObjectId를 문자열로 변환
     title: str
     folder_type: str
-    created_at: datetime
-    last_accessed_at: datetime
+    created_at: Optional[datetime] = None
+    last_accessed_at: Optional[datetime] = None
     cover_image_url: Optional[str] = None
     document_count: int = 0
     file_count: int = 0
@@ -105,7 +105,7 @@ async def list_folders(limit: int = 50, skip: int = 0):
         
         # 각 폴더의 문서 및 파일 수 계산
         folder_responses = []
-        for folder in sorted(folders, key=lambda x: x.get('last_accessed_at', x['created_at']), reverse=True):
+        for folder in sorted(folders, key=lambda x: x.get('last_accessed_at', x.get('created_at', datetime.utcnow())), reverse=True):
             folder_id_str = str(folder["_id"])
             
             # 문서 수 (documents 컬렉션에서)
@@ -124,8 +124,8 @@ async def list_folders(limit: int = 50, skip: int = 0):
                 folder_id=folder_id_str,
                 title=folder["title"],
                 folder_type=folder["folder_type"],
-                created_at=folder["created_at"],
-                last_accessed_at=folder["last_accessed_at"],
+                created_at=folder.get("created_at"),
+                last_accessed_at=folder.get("last_accessed_at"),
                 cover_image_url=folder.get("cover_image_url"),
                 document_count=doc_count,
                 file_count=file_count
@@ -173,8 +173,8 @@ async def get_folder(folder_id: str):
             folder_id=str(folder["_id"]),
             title=folder["title"],
             folder_type=folder["folder_type"],
-            created_at=folder["created_at"],
-            last_accessed_at=folder["last_accessed_at"],
+            created_at=folder.get("created_at"),
+            last_accessed_at=folder.get("last_accessed_at"),
             cover_image_url=folder.get("cover_image_url"),
             document_count=doc_count,
             file_count=file_count
@@ -254,8 +254,8 @@ async def update_folder(folder_id: str, request: FolderUpdateRequest):
             folder_id=str(updated_folder["_id"]),
             title=updated_folder["title"],
             folder_type=updated_folder["folder_type"],
-            created_at=updated_folder["created_at"],
-            last_accessed_at=updated_folder["last_accessed_at"],
+            created_at=updated_folder.get("created_at"),
+            last_accessed_at=updated_folder.get("last_accessed_at"),
             cover_image_url=updated_folder.get("cover_image_url"),
             document_count=doc_count,
             file_count=file_count
@@ -302,6 +302,8 @@ async def delete_folder(folder_id: str, force: bool = False):
             await db.qapairs.delete_many({"folder_id": folder_id})
             await db.recommendations.delete_many({"folder_id": folder_id})
             await db.labels.delete_many({"folder_id": folder_id})
+            await db.memos.delete_many({"folder_id": folder_id})
+            await db.highlights.delete_many({"folder_id": folder_id})
         
         # 폴더 삭제
         success = await db_ops.delete_one("folders", {"_id": ObjectId(folder_id)})

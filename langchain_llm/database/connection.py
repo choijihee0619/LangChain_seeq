@@ -116,6 +116,24 @@ class DatabaseConnection:
             await self.db.reports.create_index("updated_at")
             await self._create_text_index("reports", "title")
             
+            # memos 컬렉션 인덱스 (메모 기능용 - 새로 추가)
+            await self.db.memos.create_index("folder_id")
+            await self.db.memos.create_index("title")
+            await self.db.memos.create_index("tags")
+            await self.db.memos.create_index("created_at")
+            await self.db.memos.create_index("updated_at")
+            await self._create_text_index("memos", "content")
+            
+            # highlights 컬렉션 인덱스 (하이라이트 기능용 - 새로 추가)
+            await self.db.highlights.create_index("file_id")
+            await self.db.highlights.create_index("folder_id")
+            await self.db.highlights.create_index("start_offset")
+            await self.db.highlights.create_index("end_offset")
+            await self.db.highlights.create_index([("file_id", 1), ("start_offset", 1), ("end_offset", 1)], unique=True)
+            await self.db.highlights.create_index("color")
+            await self.db.highlights.create_index("created_at")
+            await self._create_text_index("highlights", "highlight_text")
+            
             logger.info("인덱스 생성 완료")
             
         except Exception as e:

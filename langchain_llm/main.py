@@ -24,6 +24,7 @@ from config.settings import settings
 from database.connection import init_db, close_db
 from api.routers import query, summary, quiz, keywords, mindmap, recommend, upload, folders
 from api.routers import ocr_bridge, quiz_qa, reports
+from api.routers import memos, highlights
 from utils.logger import setup_logger
 
 # 로거 설정
@@ -70,6 +71,8 @@ app.include_router(keywords.router, prefix="/keywords", tags=["Keywords"])
 app.include_router(mindmap.router, prefix="/mindmap", tags=["Mindmap"])
 app.include_router(recommend.router, prefix="/recommend", tags=["Recommend"])
 app.include_router(reports.router, prefix="/reports", tags=["Reports"])
+app.include_router(memos.router, prefix="/memos", tags=["Memos"])
+app.include_router(highlights.router, prefix="/highlights", tags=["Highlights"])
 app.include_router(ocr_bridge.router, prefix="/ocr-bridge", tags=["OCR Bridge"])
 
 @app.get("/")

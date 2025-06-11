@@ -139,7 +139,7 @@ class DatabaseOperations:
     
     # === 새로운 특화 메서드들 ===
     
-    async def create_folder(self, title: str, folder_type: str = "general", cover_image_url: Optional[str] = None) -> str:
+    async def create_folder(self, title: str, folder_type: str = "library", cover_image_url: Optional[str] = None) -> str:
         """폴더 생성"""
         try:
             folder_doc = {

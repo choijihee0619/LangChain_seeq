@@ -317,7 +317,7 @@ class DocumentProcessor:
             logger.info(f"새 폴더 생성: {folder_input}")
             folder_id = await self.db_ops.create_folder(
                 title=folder_input,
-                folder_type="general"
+                folder_type="library"
             )
             return folder_id
             
@@ -336,7 +336,7 @@ class DocumentProcessor:
             # 새 기본 폴더 생성
             folder_id = await self.db_ops.create_folder(
                 title="기본 폴더",
-                folder_type="general"
+                folder_type="library"
             )
             logger.info(f"기본 폴더 생성 완료: {folder_id}")
             return folder_id
