@@ -19,7 +19,7 @@ router = APIRouter()
 
 class RecommendRequest(BaseModel):
     """추천 요청 모델"""
-    keywords: List[str]
+    keywords: Optional[List[str]] = []  # Optional로 변경, 기본값은 빈 리스트
     content_types: List[str] = ["book", "movie", "youtube_video"]
     max_items: int = 10
     include_youtube: bool = True  # YouTube 검색 포함 여부
@@ -76,9 +76,32 @@ async def get_recommendations(request: RecommendRequest):
         db = await get_database()
         recommend_chain = RecommendChain(db)
         
+        # keywords가 비어있고 folder_id가 있으면 자동 추출
+        keywords = request.keywords
+        if not keywords and request.folder_id:
+            logger.info(f"키워드가 비어있음. 폴더 {request.folder_id}의 labels.tags에서 자동 추출 시도")
+            keywords = await recommend_chain.extract_keywords_from_folder_labels(
+                request.folder_id
+            )
+            
+            # 자동 추출도 실패한 경우 에러 처리
+            if not keywords:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"폴더 {request.folder_id}에서 키워드를 추출할 수 없습니다. 키워드를 직접 제공하거나 해당 폴더에 라벨링된 문서가 있는지 확인하세요."
+                )
+        elif not keywords:
+            # folder_id도 없고 keywords도 없는 경우
+            raise HTTPException(
+                status_code=400,
+                detail="키워드를 제공하거나 folder_id를 제공하여 자동 키워드 추출을 사용하세요."
+            )
+        
+        logger.info(f"사용할 키워드: {keywords}")
+        
         # 추천 생성
         result = await recommend_chain.process(
-            keywords=request.keywords,
+            keywords=keywords,  # 자동 추출되거나 원본 키워드 사용
             content_types=request.content_types,
             max_items=request.max_items,
             include_youtube=request.include_youtube,
@@ -115,9 +138,12 @@ async def get_recommendations(request: RecommendRequest):
             total_count=len(recommendations),
             youtube_included=youtube_count > 0,
             sources_summary=sources_count,
+            extracted_keywords=keywords if not request.keywords else None,  # 자동 추출된 경우만 반환
             from_cache=result.get("from_cache", False)  # 캐시 사용 여부 추가
         )
         
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"추천 생성 실패: {e}")
         raise HTTPException(status_code=500, detail=str(e))

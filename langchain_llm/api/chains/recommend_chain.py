@@ -28,6 +28,7 @@ class RecommendChain:
         self.documents = db.documents  # documents 컬렉션 추가
         self.chunks = db.chunks        # chunks 컬렉션 추가
         self.file_info = db.file_info  # 새로운 file_info 컬렉션
+        self.auto_labeler = AutoLabeler()  # AutoLabeler 초기화 추가
     
     async def process(
         self,
@@ -97,8 +98,13 @@ class RecommendChain:
                 recommendations, keywords, max_items
             )
             
-            # 7. 추천이 부족한 경우에만 fallback 데이터 추가
-            if len(final_recommendations) < max_items:
+            # 7. 추천이 부족하고 실제 추천이 없는 경우에만 fallback 데이터 추가
+            has_real_recommendations = any(
+                rec.get("recommendation_source") in ["llm_realtime", "youtube_realtime", "database"]
+                for rec in final_recommendations
+            )
+            
+            if len(final_recommendations) < max_items and not has_real_recommendations:
                 fallback_recommendations = self._generate_fallback_recommendations(keywords)
                 final_recommendations.extend(fallback_recommendations)
             
@@ -231,12 +237,15 @@ class RecommendChain:
             recommendations = []
             max_per_type = max(1, max_items // len(content_types))
             
-            for keyword in keywords[:3]:  # 최대 3개 키워드만 처리
+            for keyword in keywords[:5]:  # 최대 5개 키워드 처리 (모든 키워드)
                 # 도서 추천
                 if "book" in content_types:
                     books = await web_recommendation_engine.search_books(
                         keyword, max_results=max_per_type
                     )
+                    # 키워드 필드 추가
+                    for book in books:
+                        book["keyword"] = keyword
                     recommendations.extend(books)
                 
                 # 영화 추천  
@@ -244,6 +253,9 @@ class RecommendChain:
                     movies = await web_recommendation_engine.search_movies(
                         keyword, max_results=max_per_type
                     )
+                    # 키워드 필드 추가
+                    for movie in movies:
+                        movie["keyword"] = keyword
                     recommendations.extend(movies)
             
             logger.info(f"웹에서 {len(recommendations)}개 추천 검색")
@@ -272,14 +284,31 @@ class RecommendChain:
                     keyword_groups[keyword] = []
                 keyword_groups[keyword].append(rec)
             
-            # 균등 분배
+            logger.info(f"키워드 그룹화 결과: {[(k, len(v)) for k, v in keyword_groups.items()]}")
+            
+            # 균등 분배 (더 관대하게)
             balanced = []
-            max_per_keyword = max(1, max_items // len(keyword_groups))
+            max_per_keyword = max(2, max_items // len(keyword_groups))  # 최소 2개씩
+            logger.info(f"키워드당 최대 개수: {max_per_keyword}")
             
+            # 키워드별 분배 후 여유 공간이 있으면 추가로 채움
             for keyword, recs in keyword_groups.items():
-                balanced.extend(recs[:max_per_keyword])
+                selected = recs[:max_per_keyword]
+                logger.info(f"키워드 '{keyword}'에서 {len(selected)}개 선택")
+                balanced.extend(selected)
             
-            # 소스별 다양성 확보
+            # 여유가 있으면 남은 추천들로 채우기
+            if len(balanced) < max_items:
+                remaining_slots = max_items - len(balanced)
+                used_recs = set(id(rec) for rec in balanced)
+                
+                for keyword, recs in keyword_groups.items():
+                    for rec in recs[max_per_keyword:]:
+                        if id(rec) not in used_recs and len(balanced) < max_items:
+                            balanced.append(rec)
+                            used_recs.add(id(rec))
+            
+            # 소스별 다양성 확보 (웹 추천의 경우 제한 완화)
             final_balanced = []
             source_count = {}
             
@@ -287,11 +316,17 @@ class RecommendChain:
                 source = rec.get("recommendation_source", "unknown")
                 count = source_count.get(source, 0)
                 
-                # 같은 소스의 추천이 너무 많지 않도록 제한
-                if count < max_items // 3:  # 최대 1/3까지만
+                # 웹 추천(llm_realtime)의 경우 더 관대한 제한
+                if source == "llm_realtime":
+                    max_per_source = max_items  # 웹 추천은 제한 없음
+                else:
+                    max_per_source = max(2, max_items // 2)  # 다른 소스는 절반까지
+                
+                if count < max_per_source:
                     final_balanced.append(rec)
                     source_count[source] = count + 1
             
+            logger.info(f"소스별 최종 분배: {[(k, v) for k, v in source_count.items()]}")
             return final_balanced
             
         except Exception as e:
@@ -339,50 +374,64 @@ class RecommendChain:
     ) -> List[str]:
         """파일에서 키워드 자동 추출"""
         try:
-            if file_id:
-                # 특정 파일에서 텍스트 추출 (새로운 구조 적용)
-                # file_info 대신 TextCollector 사용
-                collected_text = await TextCollector.get_text_from_file(
-                    self.db, file_id, use_chunks=True
-                )
-                
-                if not collected_text.strip():
-                    logger.warning(f"파일에서 텍스트를 추출할 수 없음: {file_id}")
-                    return []
-                    
-            elif folder_id:
-                # 폴더에서 텍스트 수집 (새로운 documents 컬렉션 사용)
-                collected_text = await TextCollector.get_text_from_folder(
-                    self.db, folder_id, use_chunks=True
-                )
-                
-                if not collected_text.strip():
-                    logger.warning(f"폴더에서 텍스트를 추출할 수 없음: {folder_id}")
-                    return []
-            else:
-                raise ValueError("file_id 또는 folder_id가 필요합니다")
+            text_collector = TextCollector(self.db)
             
-            if not collected_text:
-                logger.warning("추출할 텍스트가 없습니다")
+            # 텍스트 수집
+            combined_text = await text_collector.collect_text_from_file(
+                file_id=file_id,
+                folder_id=folder_id
+            )
+            
+            if not combined_text:
+                logger.warning(f"텍스트를 찾을 수 없습니다. file_id: {file_id}, folder_id: {folder_id}")
                 return []
             
-            # 자동 라벨링을 통한 키워드 추출
-            auto_labeler = AutoLabeler()
-            labels = await auto_labeler.analyze_document(collected_text)
+            # 키워드 추출
+            keywords = await self.auto_labeler.extract_keywords(combined_text, max_keywords)
             
-            # 키워드와 태그 결합
-            keywords = labels.get("keywords", []) + labels.get("tags", [])
-            
-            # 중복 제거 및 길이 제한
-            unique_keywords = list(set(keywords))[:max_keywords]
-            
-            logger.info(f"추출된 키워드: {unique_keywords}")
-            return unique_keywords
+            logger.info(f"추출된 키워드: {keywords}")
+            return keywords
             
         except Exception as e:
             logger.error(f"키워드 추출 실패: {e}")
             return []
-    
+
+    async def extract_keywords_from_folder_labels(self, folder_id: str) -> List[str]:
+        """폴더 ID로부터 labels.tags 추출하여 키워드로 사용"""
+        try:
+            # labels 컬렉션에서 해당 폴더의 모든 태그 수집
+            cursor = self.db.labels.find({"folder_id": folder_id})
+            
+            tag_frequency = {}
+            async for label_doc in cursor:
+                # labels.labels.tags 구조에서 태그 추출
+                labels = label_doc.get("labels", {})
+                tags = labels.get("tags", [])
+                
+                # tags가 리스트가 아닌 경우 처리
+                if isinstance(tags, str):
+                    tags = [tags]
+                elif not isinstance(tags, list):
+                    continue
+                    
+                for tag in tags:
+                    if isinstance(tag, str) and len(tag) >= 2:  # 2글자 이상만
+                        # 최소한의 필터링: 정말 의미 없는 태그만 제외
+                        excluded_tags = ["문서", "파일", "텍스트", "자료", "기타"]
+                        if tag.lower() not in excluded_tags:
+                            tag_frequency[tag] = tag_frequency.get(tag, 0) + 1
+            
+            # 빈도순 정렬하여 상위 5개 선택
+            sorted_tags = sorted(tag_frequency.items(), key=lambda x: x[1], reverse=True)
+            keywords = [tag for tag, freq in sorted_tags[:5]]
+            
+            logger.info(f"폴더 {folder_id}에서 추출된 키워드: {keywords} (총 {len(tag_frequency)}개 태그 중)")
+            return keywords
+            
+        except Exception as e:
+            logger.warning(f"폴더 라벨에서 키워드 추출 실패: {e}")
+            return []
+
     async def get_cached_recommendations(self, folder_id: Optional[str] = None, limit: int = 10) -> List[Dict]:
         """캐시된 추천 목록 조회"""
         try:
