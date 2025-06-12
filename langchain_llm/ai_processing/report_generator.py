@@ -2,6 +2,7 @@
 보고서 생성 모듈
 AI 기반 학술적 보고서 자동 생성
 CREATED 2024-12-20: 폴더 기반 문서 분석 및 구조화된 보고서 생성
+MODIFIED 2024-12-20: JSON 파싱 안정성 개선 - Markdown 코드블럭 처리 추가
 """
 from typing import Dict, List, Optional, Tuple
 from datetime import datetime
@@ -10,6 +11,7 @@ import asyncio
 from openai import AsyncOpenAI
 from config.settings import settings
 from utils.logger import get_logger
+from utils.json_parser import safe_json_loads
 
 logger = get_logger(__name__)
 
@@ -179,8 +181,17 @@ class ReportGenerator:
                 max_tokens=1000
             )
             
-            import json
-            result = json.loads(response.choices[0].message.content)
+            result = safe_json_loads(response.choices[0].message.content, default={})
+            if not result:
+                logger.warning("내용 분석 JSON 파싱 실패")
+                logger.error(f"LLM 응답: {response.choices[0].message.content}")
+                return {
+                    "main_topic": "종합 분석",
+                    "keywords": ["분석", "연구", "내용"],
+                    "key_concepts": ["주요 개념"],
+                    "document_nature": "종합적",
+                    "academic_domain": "일반"
+                }
             return result
             
         except Exception as e:
@@ -224,8 +235,11 @@ class ReportGenerator:
                 max_tokens=500
             )
             
-            import json
-            result = json.loads(response.choices[0].message.content)
+            result = safe_json_loads(response.choices[0].message.content, default={})
+            if not result or "title" not in result or "subtitle" not in result:
+                logger.warning("제목 생성 JSON 파싱 실패")
+                logger.error(f"LLM 응답: {response.choices[0].message.content}")
+                return f"{analysis['main_topic']} 분석 보고서", "종합적 연구 및 분석"
             return result["title"], result["subtitle"]
             
         except Exception as e:
@@ -342,8 +356,24 @@ class ReportGenerator:
                 max_tokens=2500
             )
             
-            import json
-            result = json.loads(response.choices[0].message.content)
+            result = safe_json_loads(response.choices[0].message.content, default={})
+            if not result or not all(f"section_{i}" in result for i in range(1, 4)):
+                logger.warning("본론 생성 JSON 파싱 실패")
+                logger.error(f"LLM 응답: {response.choices[0].message.content}")
+                return {
+                    "section_1": {
+                        "title": "현황 분석",
+                        "content": f"{analysis['main_topic']}의 현재 상황과 배경을 분석합니다."
+                    },
+                    "section_2": {
+                        "title": "주요 내용",
+                        "content": "핵심 내용과 주요 발견사항을 정리합니다."
+                    },
+                    "section_3": {
+                        "title": "시사점",
+                        "content": "분석 결과의 의미와 시사점을 제시합니다."
+                    }
+                }
             return result
             
         except Exception as e:

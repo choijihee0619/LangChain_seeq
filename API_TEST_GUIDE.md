@@ -3,10 +3,11 @@
 > **최신 업데이트**: 2024년 12월 - 13개 라우터, 62개 엔드포인트 완전 분석
 
 ## 📋 기본 정보
-- 🌐 **베이스 URL**: `http://localhost:8000`
-- 📍 **API 프리픽스**: `/api/v1`
+- 🌐 **베이스 URL**: `http://localhost:8000` (또는 `http://0.0.0.0:8000`)
+- 📍 **API 프리픽스**: 없음 (직접 라우터 경로 사용)
 - ✅ **필수 파라미터**: 반드시 포함해야 함
 - 🔹 **선택 파라미터**: 생략 가능 (기본값 존재)
+- 📚 **API 문서**: `http://0.0.0.0:8000/docs` (Swagger UI)
 
 ## 🗂️ 검증된 테스트 ID
 
@@ -35,7 +36,7 @@
 
 ## 📁 폴더 관리 API (folders.py)
 
-### POST /api/v1/folders/
+### POST /folders/
 ```json
 {
   "title": "API 테스트 폴더",
@@ -44,13 +45,13 @@
 }
 ```
 
-### GET /api/v1/folders/
+### GET /folders/
 **쿼리 파라미터**: `limit=20&skip=0`
 
-### GET /api/v1/folders/{folder_id}
+### GET /folders/{folder_id}
 **경로 파라미터**: `folder_id` (ObjectId)
 
-### PUT /api/v1/folders/{folder_id}
+### PUT /folders/{folder_id}
 ```json
 {
   "title": "금융 분석 자료",
@@ -58,14 +59,14 @@
 }
 ```
 
-### DELETE /api/v1/folders/{folder_id}
+### DELETE /folders/{folder_id}
 **쿼리 파라미터**: `force=true` (선택)
 
 ---
 
 ## 📤 파일 업로드 & 관리 API (upload.py)
 
-### POST /api/v1/upload/
+### POST /upload/
 **Form Data**:
 ```json
 {
@@ -103,6 +104,26 @@
 ```
 
 ### DELETE /api/v1/upload/{file_id}
+**경로 파라미터**: `file_id`
+
+### POST /upload/reprocess/{file_id}
+```json
+{
+  "preserve_formatting": true,
+  "use_original_file": true
+}
+```
+**쿼리 파라미터**: `preserve_formatting=true&use_original_file=true`
+
+### POST /upload/reprocess/folder/{folder_id}
+```json
+{
+  "preserve_formatting": true
+}
+```
+**쿼리 파라미터**: `preserve_formatting=true`
+
+### GET /upload/reprocess/available/{file_id}
 **경로 파라미터**: `file_id`
 
 ---

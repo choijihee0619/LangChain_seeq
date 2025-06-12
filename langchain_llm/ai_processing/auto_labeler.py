@@ -2,10 +2,12 @@
 자동 라벨링 모듈
 문서 내용을 분석하여 태그, 카테고리, 키워드를 자동 생성
 CREATED 2024-12-20: 문서 업로드 시 자동 라벨링 기능 추가
+MODIFIED 2024-12-20: JSON 파싱 안정성 개선 - Markdown 코드블럭 처리 추가
 """
 from typing import Dict, List
 from ai_processing.llm_client import LLMClient
 from utils.logger import get_logger
+from utils.json_parser import safe_json_loads
 import json
 import re
 
@@ -105,23 +107,16 @@ confidence_score는 0.0-1.0 사이의 분석 신뢰도입니다."""
 
             response = await self.llm_client.generate(prompt, max_tokens=300)
             
-            # JSON 파싱 시도
-            try:
-                # 응답에서 JSON 부분만 추출
-                json_match = re.search(r'\{.*\}', response, re.DOTALL)
-                if json_match:
-                    json_str = json_match.group()
-                    result = json.loads(json_str)
-                    
-                    # 결과 검증 및 정리
-                    return self._validate_llm_result(result)
-                else:
-                    logger.warning("LLM 응답에서 JSON을 찾을 수 없음")
-                    return self._fallback_analysis(text)
-                    
-            except json.JSONDecodeError as e:
-                logger.warning(f"LLM 응답 JSON 파싱 실패: {e}")
+            # 안전한 JSON 파싱 시도 (Markdown 코드블럭 제거)
+            result = safe_json_loads(response, default={})
+            
+            if not result:
+                logger.warning("LLM 응답에서 유효한 JSON을 찾을 수 없음")
+                logger.error(f"LLM 응답: {response}")
                 return self._fallback_analysis(text)
+            
+            # 결과 검증 및 정리
+            return self._validate_llm_result(result)
                 
         except Exception as e:
             logger.error(f"LLM 분석 실패: {e}")

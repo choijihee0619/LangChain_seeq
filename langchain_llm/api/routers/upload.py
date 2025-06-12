@@ -98,12 +98,13 @@ async def upload_file(
     file: UploadFile = File(...),
     folder_id: Optional[str] = Form(None),
     folder_title: Optional[str] = Form(None),
-    description: Optional[str] = Form(None)
+    description: Optional[str] = Form(None),
+    preserve_formatting: bool = Form(True)  # 줄바꿈 보존 옵션
 ):
     """파일 업로드 및 처리"""
     try:
         # 디버깅: 받은 폼 데이터 로그 출력
-        logger.info(f"업로드 폼 데이터 - 파일명: {file.filename}, folder_id: '{folder_id}', folder_title: '{folder_title}', description: '{description}'")
+        logger.info(f"업로드 폼 데이터 - 파일명: {file.filename}, folder_id: '{folder_id}', folder_title: '{folder_title}', description: '{description}', preserve_formatting: {preserve_formatting}")
         
         # folder_id와 folder_title 동시 입력 방지
         if (folder_id and folder_id.strip() and folder_id not in ["string", "null"]) and \
@@ -208,11 +209,12 @@ async def upload_file(
             "description": clean_description
         }
         
-        # 문서 처리기로 파일 처리
+        # 문서 처리기로 파일 처리 (줄바꿈 보존 옵션 전달)
         processor = DocumentProcessor(db)
         result = await processor.process_and_store(
             file_path=temp_file_path,
-            file_metadata=file_metadata
+            file_metadata=file_metadata,
+            preserve_formatting=preserve_formatting
         )
         
         # 임시 파일 삭제
@@ -222,7 +224,8 @@ async def upload_file(
             logger.warning(f"임시 파일 삭제 실패: {e}")
         
         # 성공 메시지 생성
-        success_message = "파일 업로드가 완료되었습니다."
+        format_status = "줄바꿈 보존" if preserve_formatting else "기본 정리"
+        success_message = f"파일 업로드가 완료되었습니다. ({format_status})"
         if clean_folder_id:
             # 폴더 정보 조회해서 메시지에 포함
             try:
@@ -944,4 +947,120 @@ async def get_file_preview_with_chunks(file_id: str, chunk_count: int = 3):
         raise
     except Exception as e:
         logger.error(f"청크 기반 미리보기 실패: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/reprocess/{file_id}")
+async def reprocess_file_with_formatting(
+    file_id: str,
+    preserve_formatting: bool = True,
+    use_original_file: bool = True
+):
+    """
+    기존 파일을 줄바꿈 보존 방식으로 재처리
+    """
+    try:
+        db = await get_database()
+        processor = DocumentProcessor(db)
+        
+        if use_original_file:
+            # 원본 파일에서 재처리 (최고 품질)
+            result = await processor.reprocess_document_with_formatting(
+                file_id=file_id,
+                preserve_formatting=preserve_formatting
+            )
+        else:
+            # 저장된 raw_text에서 재처리 (제한적)
+            result = await processor.reprocess_from_raw_text(
+                file_id=file_id,
+                preserve_formatting=preserve_formatting
+            )
+        
+        format_status = "줄바꿈 보존" if preserve_formatting else "기본 정리"
+        source_type = "원본 파일" if use_original_file else "저장된 텍스트"
+        
+        return {
+            "success": True,
+            "message": f"파일 재처리가 완료되었습니다. ({format_status}, {source_type})",
+            "file_id": file_id,
+            "chunks_count": result.get("chunks_count", 0),
+            "preserve_formatting": preserve_formatting,
+            "source_type": source_type
+        }
+        
+    except Exception as e:
+        logger.error(f"파일 재처리 실패: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/reprocess/folder/{folder_id}")
+async def reprocess_folder_files(
+    folder_id: str,
+    preserve_formatting: bool = True
+):
+    """
+    폴더 내 모든 파일을 일괄 재처리
+    """
+    try:
+        db = await get_database()
+        processor = DocumentProcessor(db)
+        
+        result = await processor.batch_reprocess_folder(
+            folder_id=folder_id,
+            preserve_formatting=preserve_formatting
+        )
+        
+        format_status = "줄바꿈 보존" if preserve_formatting else "기본 정리"
+        
+        return {
+            "success": True,
+            "message": f"폴더 내 파일 일괄 재처리가 완료되었습니다. ({format_status})",
+            "folder_id": folder_id,
+            "total_files": result["total_files"],
+            "success_count": result["success_count"],
+            "failed_count": result["failed_count"],
+            "failed_files": result["failed_files"],
+            "processing_details": result["processing_details"],
+            "preserve_formatting": preserve_formatting
+        }
+        
+    except Exception as e:
+        logger.error(f"폴더 일괄 재처리 실패: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/reprocess/available/{file_id}")
+async def check_reprocess_availability(file_id: str):
+    """
+    파일 재처리 가능 여부 확인
+    """
+    try:
+        db = await get_database()
+        db_ops = DatabaseOperations(db)
+        
+        # 파일 정보 조회
+        file_info = await db_ops.find_one("file_info", {"file_id": file_id})
+        if not file_info:
+            raise HTTPException(status_code=404, detail="파일을 찾을 수 없습니다.")
+        
+        # 원본 파일 존재 여부 확인
+        original_path = file_info.get("original_path")
+        has_original_file = original_path and Path(original_path).exists()
+        
+        # 저장된 텍스트 존재 여부 확인
+        doc = await db_ops.find_one("documents", {"file_metadata.file_id": file_id})
+        has_stored_text = doc and doc.get("raw_text")
+        
+        return {
+            "file_id": file_id,
+            "filename": file_info["original_filename"],
+            "has_original_file": has_original_file,
+            "has_stored_text": bool(has_stored_text),
+            "original_path": original_path,
+            "can_reprocess": has_original_file or has_stored_text,
+            "recommended_method": "original_file" if has_original_file else "stored_text" if has_stored_text else "none",
+            "current_formatting": file_info.get("preserve_formatting", "unknown")
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"재처리 가능 여부 확인 실패: {e}")
         raise HTTPException(status_code=500, detail=str(e)) 

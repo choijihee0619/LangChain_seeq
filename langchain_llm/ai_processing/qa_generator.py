@@ -2,11 +2,13 @@
 QA 생성 모듈
 LLM을 사용한 질문-답변 쌍 및 퀴즈 생성
 MODIFIED 2024-12-19: models 의존성 제거하여 단순화
+MODIFIED 2024-12-20: JSON 파싱 안정성 개선 - Markdown 코드블럭 처리 추가
 """
 from typing import List, Dict, Optional
 import json
 from ai_processing.llm_client import LLMClient
 from utils.logger import get_logger
+from utils.json_parser import safe_json_loads, validate_quiz_json
 
 logger = get_logger(__name__)
 
@@ -45,8 +47,12 @@ class QAGenerator:
                 max_tokens=800
             )
             
-            # JSON 파싱
-            qa_pairs = json.loads(response)
+            # 안전한 JSON 파싱 (Markdown 코드블럭 제거)
+            qa_pairs = safe_json_loads(response, default=[])
+            if not qa_pairs:
+                logger.warning("QA 생성 결과가 비어있습니다")
+                return []
+            
             return qa_pairs
         except Exception as e:
             logger.error(f"QA 생성 실패: {e}")
@@ -149,40 +155,31 @@ class QAGenerator:
                 max_tokens=400
             )
             
-            # JSON 파싱 시도
-            try:
-                quiz = json.loads(response.strip())
-                
-                # 퀴즈 타입별 필수 필드 검증
-                if quiz_type == "multiple_choice":
-                    required_fields = ["question", "options", "correct_option"]
-                elif quiz_type == "true_false":
-                    required_fields = ["question", "options", "correct_option"]
-                elif quiz_type in ["short_answer", "fill_in_blank"]:
-                    required_fields = ["question", "correct_answer"]
-                else:
-                    required_fields = ["question"]
-                
-                if all(field in quiz for field in required_fields):
-                    # 기본값 설정
-                    if "difficulty" not in quiz:
-                        quiz["difficulty"] = difficulty or "medium"
-                    if "explanation" not in quiz:
-                        quiz["explanation"] = "설명이 제공되지 않았습니다."
-                    
-                    # 퀴즈 타입 추가
-                    quiz["quiz_type"] = quiz_type
-                    
-                    logger.info(f"퀴즈 생성 성공 - 타입: {quiz_type}")
-                    return quiz
-                else:
-                    logger.warning(f"필수 필드 누락: {required_fields}")
-                    return {}
-                    
-            except json.JSONDecodeError as e:
-                logger.error(f"JSON 파싱 실패: {e}")
+            # 안전한 JSON 파싱 시도 (Markdown 코드블럭 제거)
+            quiz = safe_json_loads(response, default={})
+            
+            if not quiz:
+                logger.warning("퀴즈 생성 결과가 비어있습니다")
                 logger.error(f"LLM 응답: {response}")
                 return {}
+            
+            # 퀴즈 JSON 데이터 유효성 검증
+            if not validate_quiz_json(quiz, quiz_type):
+                logger.warning("퀴즈 유효성 검증 실패")
+                logger.error(f"퀴즈 데이터: {quiz}")
+                return {}
+            
+            # 기본값 설정
+            if "difficulty" not in quiz:
+                quiz["difficulty"] = difficulty or "medium"
+            if "explanation" not in quiz:
+                quiz["explanation"] = "설명이 제공되지 않았습니다."
+            
+            # 퀴즈 타입 추가
+            quiz["quiz_type"] = quiz_type
+            
+            logger.info(f"퀴즈 생성 성공 - 타입: {quiz_type}")
+            return quiz
             
         except Exception as e:
             logger.error(f"퀴즈 생성 실패: {e}")

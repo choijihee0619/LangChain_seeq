@@ -1,9 +1,11 @@
 """
 Response Coordinator
 응답 조정 및 통합
+MODIFIED 2024-12-20: JSON 파싱 안정성 개선 - Markdown 코드블럭 처리 추가
 """
 from typing import Dict, Any, List, Optional
 from utils.logger import get_logger
+from utils.json_parser import safe_json_loads
 
 logger = get_logger(__name__)
 
@@ -45,12 +47,11 @@ class ResponseCoordinator:
                 if tool_result.get("status") == "success":
                     result_data = tool_result.get("result", "")
                     
-                    # JSON 문자열인 경우 파싱
+                    # JSON 문자열인 경우 안전한 파싱
                     if isinstance(result_data, str):
-                        try:
-                            import json
-                            parsed_result = json.loads(result_data)
-                            
+                        parsed_result = safe_json_loads(result_data, default=None)
+                        
+                        if parsed_result:
                             # 벡터 검색 결과 처리
                             if "documents" in parsed_result:
                                 for doc in parsed_result["documents"][:3]:  # 상위 3개만
@@ -67,8 +68,8 @@ class ResponseCoordinator:
                             # 퀴즈 결과 처리
                             elif "quizzes" in parsed_result:
                                 coordinated_response["additional_info"]["quizzes"] = parsed_result["quizzes"]
-                            
-                        except:
+                        else:
+                            # JSON 파싱 실패 시 문자열 그대로 사용
                             primary_answers.append(str(result_data)[:500])
                     else:
                         primary_answers.append(str(result_data)[:500])
