@@ -72,12 +72,14 @@ class RecommendChain:
             
             # 2. 새로운 추천 생성
             recommendations = []
+            logger.info(f"추천 생성 시작 - 키워드: {keywords}, 타입: {content_types}")
             
             # 3. 기존 DB에서 저장된 추천 검색
             db_recommendations = await self._search_db_recommendations(
                 keywords, content_types, max_items
             )
             recommendations.extend(db_recommendations)
+            logger.info(f"DB 추천: {len(db_recommendations)}개 추가")
             
             # 4. YouTube 실시간 검색 (include_youtube가 True이고 video 관련 타입이 포함된 경우)
             if include_youtube and ("video" in content_types or "youtube_video" in content_types):
@@ -85,12 +87,16 @@ class RecommendChain:
                     keywords, youtube_max_per_keyword
                 )
                 recommendations.extend(youtube_recommendations)
+                logger.info(f"YouTube 추천: {len(youtube_recommendations)}개 추가")
+            else:
+                logger.info("YouTube 검색 건너뜀")
             
             # 5. 웹 검색 기반 실시간 추천 (book, movie, video 타입)
             web_recommendations = await self._search_web_recommendations(
                 keywords, content_types, max_items
             )
             recommendations.extend(web_recommendations)
+            logger.info(f"웹 추천: {len(web_recommendations)}개 추가")
             
             # 6. 결과 정렬 및 제한
             # 다양성을 위해 키워드별로 균등하게 분배
@@ -237,32 +243,58 @@ class RecommendChain:
             recommendations = []
             max_per_type = max(1, max_items // len(content_types))
             
+            logger.info(f"웹 추천 시작 - 키워드: {keywords}, 타입: {content_types}")
+            
             for keyword in keywords[:5]:  # 최대 5개 키워드 처리 (모든 키워드)
+                logger.info(f"키워드 '{keyword}' 처리 중...")
+                
                 # 도서 추천
                 if "book" in content_types:
-                    books = await web_recommendation_engine.search_books(
-                        keyword, max_results=max_per_type
-                    )
-                    # 키워드 필드 추가
-                    for book in books:
-                        book["keyword"] = keyword
-                    recommendations.extend(books)
+                    try:
+                        logger.info(f"도서 검색 시작: {keyword}")
+                        books = await web_recommendation_engine.search_books(
+                            keyword, max_results=max_per_type
+                        )
+                        logger.info(f"도서 검색 결과: {len(books)}개")
+                        
+                        # 키워드 필드 추가
+                        for book in books:
+                            book["keyword"] = keyword
+                        recommendations.extend(books)
+                        
+                    except Exception as e:
+                        logger.error(f"도서 검색 실패 ({keyword}): {e}")
                 
                 # 영화 추천  
                 if "movie" in content_types:
-                    movies = await web_recommendation_engine.search_movies(
-                        keyword, max_results=max_per_type
-                    )
-                    # 키워드 필드 추가
-                    for movie in movies:
-                        movie["keyword"] = keyword
-                    recommendations.extend(movies)
+                    try:
+                        logger.info(f"영화 검색 시작: {keyword}")
+                        movies = await web_recommendation_engine.search_movies(
+                            keyword, max_results=max_per_type
+                        )
+                        logger.info(f"영화 검색 결과: {len(movies)}개")
+                        
+                        # 키워드 필드 추가
+                        for movie in movies:
+                            movie["keyword"] = keyword
+                        recommendations.extend(movies)
+                        
+                    except Exception as e:
+                        logger.error(f"영화 검색 실패 ({keyword}): {e}")
             
-            logger.info(f"웹에서 {len(recommendations)}개 추천 검색")
+            logger.info(f"웹에서 총 {len(recommendations)}개 추천 검색 완료")
+            
+            # 추천 결과 상세 로깅
+            type_count = {}
+            for rec in recommendations:
+                content_type = rec.get("content_type", "unknown")
+                type_count[content_type] = type_count.get(content_type, 0) + 1
+            logger.info(f"웹 추천 타입별 결과: {type_count}")
+            
             return recommendations
             
         except Exception as e:
-            logger.warning(f"웹 추천 검색 실패: {e}")
+            logger.error(f"웹 추천 검색 전체 실패: {e}")
             return []
 
     def _balance_recommendations(
@@ -271,67 +303,119 @@ class RecommendChain:
         keywords: List[str],
         max_items: int
     ) -> List[Dict]:
-        """추천 항목들을 키워드별로 균등하게 분배"""
+        """추천 항목들을 콘텐츠 타입별로 균등하게 분배 (수정됨)"""
         try:
             if not recommendations:
                 return []
             
-            # 키워드별로 그룹화
-            keyword_groups = {}
+            logger.info(f"균형화 전 총 추천 수: {len(recommendations)}")
+            
+            # 콘텐츠 타입별로 그룹화 (우선 순위 기반)
+            content_type_groups = {
+                "book": [],
+                "movie": [], 
+                "youtube_video": [],
+                "video": [],
+                "other": []
+            }
+            
             for rec in recommendations:
-                keyword = rec.get("keyword", "unknown")
-                if keyword not in keyword_groups:
-                    keyword_groups[keyword] = []
-                keyword_groups[keyword].append(rec)
+                content_type = rec.get("content_type", "other")
+                if content_type in content_type_groups:
+                    content_type_groups[content_type].append(rec)
+                else:
+                    content_type_groups["other"].append(rec)
             
-            logger.info(f"키워드 그룹화 결과: {[(k, len(v)) for k, v in keyword_groups.items()]}")
+            # 각 타입별 추천 수 로깅
+            for content_type, recs in content_type_groups.items():
+                if recs:
+                    logger.info(f"{content_type}: {len(recs)}개")
             
-            # 균등 분배 (더 관대하게)
+            # 타입별 균등 분배 (book, movie를 우선적으로 포함)
             balanced = []
-            max_per_keyword = max(2, max_items // len(keyword_groups))  # 최소 2개씩
-            logger.info(f"키워드당 최대 개수: {max_per_keyword}")
             
-            # 키워드별 분배 후 여유 공간이 있으면 추가로 채움
-            for keyword, recs in keyword_groups.items():
-                selected = recs[:max_per_keyword]
-                logger.info(f"키워드 '{keyword}'에서 {len(selected)}개 선택")
-                balanced.extend(selected)
+            # 1단계: 각 타입에서 최소 1개씩 선택 (book, movie 우선)
+            priority_types = ["book", "movie", "youtube_video", "video"]
+            items_per_type = max(1, max_items // len(priority_types))
             
-            # 여유가 있으면 남은 추천들로 채우기
+            logger.info(f"타입별 기본 할당: {items_per_type}개씩")
+            
+            for content_type in priority_types:
+                type_recs = content_type_groups[content_type]
+                if type_recs:
+                    # 키워드별로 다양성 확보
+                    selected = self._select_diverse_by_keyword(type_recs, items_per_type)
+                    balanced.extend(selected)
+                    logger.info(f"{content_type}에서 {len(selected)}개 선택")
+            
+            # 2단계: 남은 자리가 있으면 추가 선택 (book, movie 우선)
             if len(balanced) < max_items:
                 remaining_slots = max_items - len(balanced)
-                used_recs = set(id(rec) for rec in balanced)
+                used_ids = set(id(rec) for rec in balanced)
                 
-                for keyword, recs in keyword_groups.items():
-                    for rec in recs[max_per_keyword:]:
-                        if id(rec) not in used_recs and len(balanced) < max_items:
-                            balanced.append(rec)
-                            used_recs.add(id(rec))
+                # book, movie를 우선적으로 추가
+                for content_type in ["book", "movie", "youtube_video", "video"]:
+                    if remaining_slots <= 0:
+                        break
+                        
+                    type_recs = content_type_groups[content_type]
+                    unused_recs = [rec for rec in type_recs if id(rec) not in used_ids]
+                    
+                    additional_count = min(remaining_slots, len(unused_recs))
+                    if additional_count > 0:
+                        additional = unused_recs[:additional_count]
+                        balanced.extend(additional)
+                        remaining_slots -= additional_count
+                        
+                        for rec in additional:
+                            used_ids.add(id(rec))
+                        
+                        logger.info(f"{content_type}에서 추가로 {len(additional)}개 선택")
             
-            # 소스별 다양성 확보 (웹 추천의 경우 제한 완화)
-            final_balanced = []
-            source_count = {}
+            # 최종 결과 로깅
+            final_type_count = {}
+            for rec in balanced:
+                content_type = rec.get("content_type", "unknown")
+                final_type_count[content_type] = final_type_count.get(content_type, 0) + 1
             
-            for rec in balanced[:max_items]:
-                source = rec.get("recommendation_source", "unknown")
-                count = source_count.get(source, 0)
-                
-                # 웹 추천(llm_realtime)의 경우 더 관대한 제한
-                if source == "llm_realtime":
-                    max_per_source = max_items  # 웹 추천은 제한 없음
-                else:
-                    max_per_source = max(2, max_items // 2)  # 다른 소스는 절반까지
-                
-                if count < max_per_source:
-                    final_balanced.append(rec)
-                    source_count[source] = count + 1
-            
-            logger.info(f"소스별 최종 분배: {[(k, v) for k, v in source_count.items()]}")
-            return final_balanced
+            logger.info(f"최종 타입별 분배: {final_type_count}")
+            return balanced[:max_items]
             
         except Exception as e:
             logger.warning(f"추천 균형화 실패: {e}")
             return recommendations[:max_items]
+    
+    def _select_diverse_by_keyword(self, recommendations: List[Dict], max_count: int) -> List[Dict]:
+        """키워드별로 다양성을 확보하여 추천 선택"""
+        if not recommendations:
+            return []
+        
+        # 키워드별로 그룹화
+        keyword_groups = {}
+        for rec in recommendations:
+            keyword = rec.get("keyword", "unknown")
+            if keyword not in keyword_groups:
+                keyword_groups[keyword] = []
+            keyword_groups[keyword].append(rec)
+        
+        # 각 키워드에서 골고루 선택
+        selected = []
+        keyword_list = list(keyword_groups.keys())
+        keyword_idx = 0
+        
+        while len(selected) < max_count and any(keyword_groups.values()):
+            keyword = keyword_list[keyword_idx % len(keyword_list)]
+            
+            if keyword_groups[keyword]:
+                selected.append(keyword_groups[keyword].pop(0))
+            
+            keyword_idx += 1
+            
+            # 모든 키워드 그룹이 비었으면 종료
+            if all(not group for group in keyword_groups.values()):
+                break
+        
+        return selected
 
     def _generate_fallback_recommendations(self, keywords: List[str]) -> List[Dict]:
         """기본 추천 생성 (검색 결과가 부족할 때)"""
@@ -374,26 +458,72 @@ class RecommendChain:
     ) -> List[str]:
         """파일에서 키워드 자동 추출"""
         try:
-            text_collector = TextCollector(self.db)
+            logger.info(f"키워드 추출 시작 - file_id: {file_id}, folder_id: {folder_id}")
             
             # 텍스트 수집
-            combined_text = await text_collector.collect_text_from_file(
-                file_id=file_id,
-                folder_id=folder_id
-            )
+            combined_text = ""
             
-            if not combined_text:
-                logger.warning(f"텍스트를 찾을 수 없습니다. file_id: {file_id}, folder_id: {folder_id}")
-                return []
+            if file_id:
+                logger.info(f"파일 ID {file_id}에서 텍스트 수집 중...")
+                combined_text = await TextCollector.get_text_from_file(
+                    db=self.db,
+                    file_id=file_id,
+                    use_chunks=True
+                )
+                logger.info(f"파일에서 수집된 텍스트 길이: {len(combined_text)}")
+                
+            elif folder_id:
+                logger.info(f"폴더 ID {folder_id}에서 텍스트 수집 중...")
+                combined_text = await TextCollector.get_text_from_folder(
+                    db=self.db,
+                    folder_id=folder_id,
+                    use_chunks=True
+                )
+                logger.info(f"폴더에서 수집된 텍스트 길이: {len(combined_text)}")
+            
+            if not combined_text or not combined_text.strip():
+                logger.warning(f"수집된 텍스트가 비어있음. file_id: {file_id}, folder_id: {folder_id}")
+                
+                # 청크가 없을 수도 있으니 문서에서 직접 시도
+                if file_id:
+                    logger.info("청크에서 텍스트를 찾을 수 없어 문서에서 직접 시도...")
+                    combined_text = await TextCollector.get_text_from_file(
+                        db=self.db,
+                        file_id=file_id,
+                        use_chunks=False
+                    )
+                    logger.info(f"문서에서 직접 수집된 텍스트 길이: {len(combined_text)}")
+                elif folder_id:
+                    logger.info("청크에서 텍스트를 찾을 수 없어 문서에서 직접 시도...")
+                    combined_text = await TextCollector.get_text_from_folder(
+                        db=self.db,
+                        folder_id=folder_id,
+                        use_chunks=False
+                    )
+                    logger.info(f"문서에서 직접 수집된 텍스트 길이: {len(combined_text)}")
+                
+                if not combined_text or not combined_text.strip():
+                    logger.error(f"최종적으로 텍스트를 찾을 수 없음. file_id: {file_id}, folder_id: {folder_id}")
+                    return []
+            
+            # 소스 정보 로깅
+            source_info = await TextCollector.get_source_info(
+                db=self.db,
+                file_id=file_id,
+                folder_id=folder_id,
+                use_chunks=True
+            )
+            logger.info(f"소스 정보: {source_info}")
             
             # 키워드 추출
+            logger.info("LLM을 사용하여 키워드 추출 중...")
             keywords = await self.auto_labeler.extract_keywords(combined_text, max_keywords)
             
             logger.info(f"추출된 키워드: {keywords}")
             return keywords
             
         except Exception as e:
-            logger.error(f"키워드 추출 실패: {e}")
+            logger.error(f"키워드 추출 실패: {e}", exc_info=True)
             return []
 
     async def extract_keywords_from_folder_labels(self, folder_id: str) -> List[str]:
