@@ -285,8 +285,8 @@ class OCRBridge:
             if not clean_title:
                 clean_title = "제목없음"
             
-            # 기존 폴더 찾기 (같은 title)
-            existing_folder = await self.rag_db.folders.find_one({"title": clean_title, "folder_type": "ocr"})
+            # 기존 폴더 찾기 (같은 title, folder_type 상관없이)
+            existing_folder = await self.rag_db.folders.find_one({"title": clean_title})
             
             if existing_folder:
                 # 기존 폴더의 last_accessed_at 업데이트
@@ -300,7 +300,7 @@ class OCRBridge:
             folder_created_at = timestamp or datetime.utcnow()
             folder_data = {
                 "title": clean_title,
-                "folder_type": "ocr",
+                "folder_type": "library",
                 "created_at": folder_created_at,
                 "last_accessed_at": datetime.utcnow(),
                 "cover_image_url": None,
@@ -312,7 +312,7 @@ class OCRBridge:
             
             result = await self.rag_db.folders.insert_one(folder_data)
             folder_id = str(result.inserted_id)
-            logger.info(f"OCR 폴더 생성: {folder_id} (제목: {clean_title})")
+            logger.info(f"OCR 폴더 생성: {folder_id} (제목: {clean_title}, folder_type: library)")
             return folder_id
             
         except Exception as e:
